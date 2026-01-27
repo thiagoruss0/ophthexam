@@ -1,332 +1,282 @@
 
-# Plano: Formatacao de Achados para Laudo Medico
+
+# Plano: Separacao de Achados por Olho (OD/OE) no Relatorio
 
 ## Problema Identificado
 
-Os achados da analise de IA estao sendo exibidos como JSON bruto no frontend:
+Quando um exame e marcado como `eye: both` (ambos os olhos), o relatorio final exibe os achados como se fossem de um unico olho. O formato correto para laudo deve:
 
-```javascript
-<pre className="text-xs bg-muted p-2 rounded overflow-auto">
-  {JSON.stringify(exam.analysis.findings, null, 2)}
-</pre>
-```
-
-Isso nao e legivel para um laudo medico. Os dados estao estruturados corretamente no banco (layers, biomarkers, measurements, etc), mas nao estao sendo interpretados e formatados adequadamente.
+1. Mostrar **OLHO DIREITO** e **OLHO ESQUERDO** em secoes separadas
+2. Sempre exibir a **Espessura Foveal Central** de cada olho
+3. Seguir o padrao clinico de relatorios oftalmologicos
 
 ---
 
-## Solucao Proposta
+## Arquitetura da Solucao
 
-Criar componentes especializados de formatacao para cada tipo de exame que transformam o JSON estruturado em texto clinico legivel, seguindo o padrao de laudo medico.
+A solucao envolve modificacoes em dois niveis:
 
-### Formato Esperado (Exemplo para OCT Macular):
+### Nivel 1: Frontend (Exibicao)
+- Modificar os componentes de display para renderizar cada olho separadamente quando `eye === "both"`
+- Criar estrutura visual clara com cabecalhos "OLHO DIREITO" e "OLHO ESQUERDO"
 
-```text
-TOMOGRAFIA DE COERENCIA OPTICA (OCT) - MACULAR
-
-Qualidade da Imagem: Boa
-
-OLHO DIREITO / OLHO ESQUERDO
-
-Interface Vitreorretiniana
-- MLI: Presenca de linha hiperreflectiva aderida a superficie, 
-  compativel com membrana epirretiniana
-
-Camadas Retinianas Internas
-- CFNR: Espessura e refletividade normais
-- CCG: Espessura e refletividade normais
-- CPI: Espessura e refletividade normais
-- CNI: Espessura e refletividade normais
-
-Camadas Retinianas Externas
-- CPE: Espessura e refletividade normais
-- CNE: Espessura e refletividade normais
-- Zona Elipsoide: Linha continua e bem definida
-
-Complexo EPR-Coriocapilar
-- EPR: Complexo EPR/Membrana de Bruch integro
-- Membrana de Bruch: Continua e sem interrupcoes
-
-Coroide
-- Espessura aparentemente normal
-
-MEDIDAS
-- Espessura Central Foveal: 192 um (normal)
-
-BIOMARCADORES
-[badges coloridas indicando presenca/ausencia]
-
-NOTAS CLINICAS
-[texto livre do ai_analysis.findings.clinical_notes]
-```
-
----
-
-## Arquitetura de Componentes
-
-### 1. Componente Principal: AnalysisDisplay
-
-```text
-src/components/exam/
-├── AnalysisDisplay.tsx         <- Componente principal (switch por tipo)
-├── OctMacularDisplay.tsx       <- Formatacao OCT Macular
-├── OctNerveDisplay.tsx         <- Formatacao OCT Nervo Optico
-├── RetinographyDisplay.tsx     <- Formatacao Retinografia
-├── BiomarkersDisplay.tsx       <- Badges de biomarcadores
-├── MeasurementsTable.tsx       <- Tabela de medidas
-└── LayersDisplay.tsx           <- Display de camadas retinianas
-```
-
-### 2. Mapeamento de Labels em Portugues
-
-Criar dicionario para traduzir as keys do JSON para termos medicos:
-
-```typescript
-const layerLabels = {
-  mli: "Membrana Limitante Interna (MLI)",
-  cfnr: "Camada de Fibras Nervosas da Retina (CFNR)",
-  ccg: "Camada de Celulas Ganglionares (CCG)",
-  cpi: "Camada Plexiforme Interna (CPI)",
-  cni: "Camada Nuclear Interna (CNI)",
-  cpe: "Camada Plexiforme Externa (CPE)",
-  cne: "Camada Nuclear Externa (CNE)",
-  zona_elipsoide: "Zona Elipsoide (Linha IS/OS)",
-  epr: "Epitelio Pigmentado da Retina (EPR)",
-  membrana_bruch: "Membrana de Bruch",
-  coroide: "Coroide",
-};
-
-const biomarkerLabels = {
-  fluido_intraretiniano: "Fluido Intraretiniano",
-  fluido_subretiniano: "Fluido Subretiniano",
-  dep: "Descolamento do EPR",
-  drusas: "Drusas",
-  membrana_epirretiniana: "Membrana Epirretiniana",
-  edema_macular: "Edema Macular",
-  // ...
-};
-```
+### Nivel 2: Backend (Analise de IA)
+- Modificar o prompt da IA para retornar dados estruturados por olho
+- Atualizar o mapeamento de resposta para preservar a estrutura bilateral
 
 ---
 
 ## Implementacao Detalhada
 
-### Arquivo: src/components/exam/AnalysisDisplay.tsx
+### 1. Modificar Prompt da IA (Edge Function)
 
-Componente que recebe o `exam_type` e os dados da analise, e renderiza o display apropriado:
+Atualizar o prompt OCT_MACULAR_PROMPT para solicitar analise bilateral:
 
-```typescript
-interface AnalysisDisplayProps {
-  examType: string;
-  analysis: {
-    quality_score?: string;
-    findings?: any;
-    biomarkers?: any;
-    measurements?: any;
-    diagnosis?: string[];
-    recommendations?: string[];
-    risk_classification?: string;
-  };
-  eye: string;
+**Estrutura de Resposta Atualizada:**
+```json
+{
+  "bilateral": true,
+  "od": {
+    "quality": {...},
+    "layers": {...},
+    "biomarkers": {...},
+    "measurements": {
+      "central_foveal_thickness": {"value": 198, "unit": "um", "classification": "normal"}
+    }
+  },
+  "oe": {
+    "quality": {...},
+    "layers": {...},
+    "biomarkers": {...},
+    "measurements": {
+      "central_foveal_thickness": {"value": 192, "unit": "um", "classification": "normal"}
+    }
+  },
+  "comparison": {
+    "symmetry": "simetrico|assimetrico",
+    "notes": "Achados bilaterais e simetricos..."
+  },
+  "diagnosis": [...],
+  "recommendations": [...]
 }
+```
 
-export function AnalysisDisplay({ examType, analysis, eye }: AnalysisDisplayProps) {
-  switch (examType) {
-    case 'oct_macular':
-      return <OctMacularDisplay analysis={analysis} eye={eye} />;
-    case 'oct_nerve':
-      return <OctNerveDisplay analysis={analysis} eye={eye} />;
-    case 'retinography':
-      return <RetinographyDisplay analysis={analysis} eye={eye} />;
-    default:
-      return <GenericDisplay analysis={analysis} />;
+### 2. Atualizar Mapeamento no Edge Function
+
+**Arquivo:** `supabase/functions/analyze-image/index.ts`
+
+Modificar a funcao `mapResponseToAnalysis` para:
+- Detectar se a resposta e bilateral
+- Preservar a estrutura `od` e `oe` no campo `findings`
+- Extrair medidas de cada olho para o campo `measurements`
+
+### 3. Atualizar Estrutura do Banco de Dados
+
+O campo `findings` (JSONB) ja suporta estrutura aninhada. A nova estrutura sera:
+
+```json
+{
+  "bilateral": true,
+  "od": {
+    "layers": {...},
+    "clinical_notes": "..."
+  },
+  "oe": {
+    "layers": {...},
+    "clinical_notes": "..."
+  },
+  "comparison_notes": "..."
+}
+```
+
+O campo `measurements` sera atualizado para:
+```json
+{
+  "od": {
+    "central_foveal_thickness": {"value": 198, "unit": "um", "classification": "normal"}
+  },
+  "oe": {
+    "central_foveal_thickness": {"value": 192, "unit": "um", "classification": "normal"}
   }
 }
 ```
 
-### Arquivo: src/components/exam/OctMacularDisplay.tsx
+### 4. Criar Componente BilateralDisplay
 
-Display formatado para OCT Macular com secoes claras:
+**Novo Arquivo:** `src/components/exam/BilateralDisplay.tsx`
 
-**Secoes:**
-1. Qualidade da Imagem (badge colorida)
-2. Interface Vitreorretiniana
-3. Camadas Retinianas Internas (CFNR, CCG, CPI, CNI)
-4. Camadas Retinianas Externas (CPE, CNE, Zona Elipsoide)
-5. Complexo EPR-Coriocapilar
-6. Coroide
-7. Medidas (tabela)
-8. Biomarcadores Identificados (badges)
-9. Notas Clinicas
-
-**Logica de cores para status:**
-- `normal` = verde (✓)
-- `alterada/alterado` = vermelho (!)
-- `ausente` = amarelo (⚠)
-
-### Arquivo: src/components/exam/BiomarkersDisplay.tsx
-
-Exibicao de biomarcadores como badges coloridas:
-
-```typescript
-interface BiomarkerBadgeProps {
-  name: string;
-  data: {
-    present: boolean;
-    severity?: string;
-    location?: string;
-    type?: string;
-  };
-}
-
-// Badge verde = ausente/normal
-// Badge vermelha = presente (achado patologico)
-// Badge amarela = leve/borderline
-```
-
-### Arquivo: src/components/exam/MeasurementsTable.tsx
-
-Tabela de medidas com valores de referencia:
-
-| Parametro | Valor | Classificacao |
-|-----------|-------|---------------|
-| Espessura Central | 192 um | Normal |
-| Espessura Coroide | - | - |
-
----
-
-## Modificacoes no ExamView.tsx
-
-Substituir o bloco de exibicao de achados (linhas 741-757):
-
-**ANTES:**
-```jsx
-{exam.analysis.findings && (
-  <AccordionItem value="findings">
-    <AccordionTrigger>Achados</AccordionTrigger>
-    <AccordionContent>
-      <pre className="text-xs bg-muted p-2 rounded overflow-auto">
-        {JSON.stringify(exam.analysis.findings, null, 2)}
-      </pre>
-    </AccordionContent>
-  </AccordionItem>
-)}
-```
-
-**DEPOIS:**
-```jsx
-<AnalysisDisplay 
-  examType={exam.exam_type}
-  analysis={exam.analysis}
-  eye={exam.eye}
-/>
-```
-
-O novo componente substitui todo o Accordion existente com uma visualizacao estruturada e profissional.
-
----
-
-## Estrutura Visual do Novo Display
+Componente wrapper que:
+- Detecta se a analise e bilateral (`findings.bilateral === true`)
+- Renderiza duas colunas ou secoes para OD e OE
+- Exibe comparacao entre os olhos
 
 ```text
 +--------------------------------------------------+
-| ANALISE DA IA                       [Re-analisar] |
+| TOMOGRAFIA DE COERENCIA OPTICA - MACULAR         |
+| Qualidade Global: Boa                            |
 +--------------------------------------------------+
-| Qualidade: [Boa ✓]                               |
+
++------------------------+   +------------------------+
+| OLHO DIREITO (OD)      |   | OLHO ESQUERDO (OE)     |
++------------------------+   +------------------------+
+| Interface Vitreorret.  |   | Interface Vitreorret.  |
+| [Normal]               |   | [Normal]               |
+|------------------------|   |------------------------|
+| Camadas Internas       |   | Camadas Internas       |
+| [Normal]               |   | [Normal]               |
+|------------------------|   |------------------------|
+| Camadas Externas       |   | Camadas Externas       |
+| [Normal]               |   | [Normal]               |
+|------------------------|   |------------------------|
+| Complexo EPR           |   | Complexo EPR           |
+| [Normal]               |   | [Normal]               |
+|------------------------|   |------------------------|
+| ESPESSURA FOVEAL       |   | ESPESSURA FOVEAL       |
+| 198 um [Normal]        |   | 192 um [Normal]        |
++------------------------+   +------------------------+
+
 +--------------------------------------------------+
-| INTERFACE VITREORRETINIANA                       |
-| ┌──────────────────────────────────────────────┐ |
-| │ MLI  [Alterada !]                            │ |
-| │ Presenca de linha hiperreflectiva aderida    │ |
-| │ a superficie, compativel com MER             │ |
-| └──────────────────────────────────────────────┘ |
+| COMPARACAO BILATERAL                             |
+| Achados bilaterais e simetricos.                 |
 +--------------------------------------------------+
-| CAMADAS RETINIANAS INTERNAS                      |
-| ┌──────────────────────────────────────────────┐ |
-| │ CFNR [Normal ✓] Espessura e reflet. normais  │ |
-| │ CCG  [Normal ✓] Espessura e reflet. normais  │ |
-| │ CPI  [Normal ✓] Espessura e reflet. normais  │ |
-| │ CNI  [Normal ✓] Espessura e reflet. normais  │ |
-| └──────────────────────────────────────────────┘ |
-+--------------------------------------------------+
-| CAMADAS RETINIANAS EXTERNAS                      |
-| ┌──────────────────────────────────────────────┐ |
-| │ CPE  [Normal ✓] Espessura e reflet. normais  │ |
-| │ CNE  [Normal ✓] Espessura e reflet. normais  │ |
-| │ ZE   [Normal ✓] Linha continua               │ |
-| └──────────────────────────────────────────────┘ |
-+--------------------------------------------------+
-| COMPLEXO EPR-CORIOCAPILAR                        |
-| ┌──────────────────────────────────────────────┐ |
-| │ EPR  [Normal ✓] Integro, sem descontinuidade │ |
-| │ MB   [Normal ✓] Continua                     │ |
-| └──────────────────────────────────────────────┘ |
-+--------------------------------------------------+
-| MEDIDAS                                          |
-| ┌──────────────────────────────────────────────┐ |
-| │ Espessura Central Foveal: 192 um [Normal]    │ |
-| └──────────────────────────────────────────────┘ |
-+--------------------------------------------------+
-| BIOMARCADORES                                    |
-| ┌──────────────────────────────────────────────┐ |
-| │ [MER Leve] [Sem fluido] [Sem drusas]        │ |
-| └──────────────────────────────────────────────┘ |
-+--------------------------------------------------+
-| NOTAS CLINICAS                                   |
-| ┌──────────────────────────────────────────────┐ |
-| │ Analise baseada no exame do olho esquerdo... │ |
-| └──────────────────────────────────────────────┘ |
-+--------------------------------------------------+
+
 | IMPRESSAO DIAGNOSTICA                            |
-| • Membrana Epirretiniana Leve (Celofane Macular) |
-| • Achados similares e simetricos em OD           |
+| - Membrana Epirretiniana Leve (bilateral)        |
 +--------------------------------------------------+
+
 | RECOMENDACOES                                    |
-| • Monitoramento clinico e OCT seriado            |
-| • Auto-monitoramento com Tela de Amsler          |
-| • Nao ha indicacao cirurgica no momento          |
+| - Monitoramento com OCT seriado                  |
 +--------------------------------------------------+
 ```
 
+### 5. Atualizar OctMacularDisplay
+
+**Arquivo:** `src/components/exam/OctMacularDisplay.tsx`
+
+Modificar para:
+1. Detectar se `findings.bilateral === true`
+2. Se bilateral: renderizar `BilateralDisplay`
+3. Se unilateral: manter comportamento atual
+
+```typescript
+export function OctMacularDisplay({ analysis, eye }: OctMacularDisplayProps) {
+  const findings = analysis.findings || {};
+  
+  // Check if bilateral analysis
+  if (findings.bilateral && findings.od && findings.oe) {
+    return (
+      <BilateralOctMacularDisplay 
+        analysis={analysis} 
+        odFindings={findings.od}
+        oeFindings={findings.oe}
+        comparison={findings.comparison_notes}
+      />
+    );
+  }
+  
+  // Single eye display (current behavior)
+  return <SingleEyeOctMacularDisplay analysis={analysis} eye={eye} />;
+}
+```
+
+### 6. Atualizar MeasurementsTable
+
+**Arquivo:** `src/components/exam/MeasurementsTable.tsx`
+
+Adicionar suporte para medidas bilaterais:
+
+```typescript
+// Nova prop para indicar o olho
+interface MeasurementsTableProps {
+  measurements: Record<string, any> | null;
+  compact?: boolean;
+  eye?: 'od' | 'oe' | 'both';
+}
+
+// Se measurements tem estrutura bilateral
+if (measurements.od && measurements.oe) {
+  return <BilateralMeasurementsTable od={measurements.od} oe={measurements.oe} />;
+}
+```
+
 ---
-
-## Arquivos a Criar
-
-| Arquivo | Descricao |
-|---------|-----------|
-| `src/components/exam/AnalysisDisplay.tsx` | Componente principal (router por tipo) |
-| `src/components/exam/OctMacularDisplay.tsx` | Display OCT Macular |
-| `src/components/exam/OctNerveDisplay.tsx` | Display OCT Nervo Optico |
-| `src/components/exam/RetinographyDisplay.tsx` | Display Retinografia |
-| `src/components/exam/BiomarkersDisplay.tsx` | Badges de biomarcadores |
-| `src/components/exam/MeasurementsTable.tsx` | Tabela de medidas |
-| `src/components/exam/LayerItem.tsx` | Item individual de camada |
-| `src/components/exam/analysisLabels.ts` | Dicionario de labels PT-BR |
 
 ## Arquivos a Modificar
 
 | Arquivo | Modificacao |
 |---------|-------------|
-| `src/pages/ExamView.tsx` | Substituir secao de Achados pelo AnalysisDisplay |
-| `src/components/pdf/ExamReportPdf.tsx` | Adaptar formatacao para PDF |
+| `supabase/functions/analyze-image/index.ts` | Atualizar prompt para analise bilateral, modificar mapeamento |
+| `src/components/exam/OctMacularDisplay.tsx` | Detectar e delegar para display bilateral |
+| `src/components/exam/MeasurementsTable.tsx` | Suportar medidas por olho |
+| `src/components/exam/OctNerveDisplay.tsx` | Mesma logica bilateral |
+| `src/components/exam/RetinographyDisplay.tsx` | Mesma logica bilateral |
+| `src/components/exam/AnalysisDisplay.tsx` | Passar informacoes de ambos os olhos |
+
+## Arquivos a Criar
+
+| Arquivo | Descricao |
+|---------|-----------|
+| `src/components/exam/BilateralOctMacularDisplay.tsx` | Display bilateral para OCT Macular |
+| `src/components/exam/SingleEyeDisplay.tsx` | Componente reutilizavel para um olho |
+| `src/components/exam/BilateralMeasurementsTable.tsx` | Tabela comparativa OD/OE |
+| `src/components/exam/ComparisonSection.tsx` | Secao de comparacao bilateral |
+
+---
+
+## Fluxo de Dados Atualizado
+
+```text
+1. Upload de Imagem (exam.eye = "both")
+   |
+   v
+2. Edge Function detect eye="both"
+   |
+   v
+3. Prompt inclui instrucao para analise bilateral
+   |
+   v
+4. IA retorna JSON com estrutura {od: {...}, oe: {...}}
+   |
+   v
+5. Mapeamento salva em findings: {bilateral: true, od: {...}, oe: {...}}
+   |
+   v
+6. Frontend detecta findings.bilateral === true
+   |
+   v
+7. BilateralDisplay renderiza OD e OE lado a lado
+   |
+   v
+8. Cada olho mostra sua Espessura Foveal Central
+```
+
+---
+
+## Regras de Negocio
+
+1. **Espessura Foveal Central**: SEMPRE deve ser exibida para cada olho
+2. **Quando `eye === "both"`**: Mostrar secoes separadas para OD e OE
+3. **Quando `eye === "od"` ou `eye === "oe"`**: Manter display atual de um unico olho
+4. **Comparacao**: Incluir secao de comparacao entre os olhos quando bilateral
+5. **Simetria**: Indicar visualmente se achados sao simetricos ou assimetricos
 
 ---
 
 ## Beneficios
 
-1. **Laudo Profissional**: Exibicao formatada e estruturada
-2. **Codigo Reutilizavel**: Componentes modulares por tipo de exame
-3. **Consistencia**: Mesma estrutura visual no frontend e PDF
-4. **Legibilidade**: Badges coloridas para status rapido
-5. **Escalabilidade**: Facil adicionar novos tipos de exame
-6. **Internacionalizacao**: Labels centralizadas em arquivo separado
+1. **Clareza Clinica**: Relatorio segue padrao de laudo oftalmologico
+2. **Espessura por Olho**: Medida mais importante sempre visivel
+3. **Comparacao Visual**: Facilita identificar assimetrias
+4. **Retrocompatibilidade**: Exames existentes continuam funcionando
+5. **PDF Consistente**: Mesma estrutura sera usada no PDF
 
 ---
 
 ## Consideracoes Tecnicas
 
-- Os componentes usarao shadcn/ui existentes (Card, Badge, Table)
-- Cores seguirao o design system atual (status-normal, status-abnormal, etc)
-- Tooltips explicativos para termos medicos
-- Responsividade para visualizacao mobile
-- A mesma logica de formatacao sera usada no PDF para consistencia
+- O campo `findings` (JSONB) suporta qualquer estrutura aninhada
+- Exames ja analisados com estrutura antiga continuarao funcionando
+- A deteccao de bilateral e feita pelo campo `findings.bilateral`
+- O prompt da IA sera atualizado para gerar a nova estrutura automaticamente
+- Analises antigas sem estrutura bilateral mostrarao no display antigo (single eye)
+
