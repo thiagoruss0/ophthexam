@@ -1,241 +1,332 @@
 
-# Plano: Monitoramento Automatico para Limpar Exames Travados
+# Plano: Formatacao de Achados para Laudo Medico
 
-## Objetivo
+## Problema Identificado
 
-Implementar um sistema automatico que monitora e limpa exames travados no status "analyzing" ha mais de 5 minutos, utilizando uma combinacao de:
-1. Database function para limpeza
-2. Edge function para ser chamada periodicamente
-3. Cron job usando pg_cron para agendar execucao automatica
+Os achados da analise de IA estao sendo exibidos como JSON bruto no frontend:
+
+```javascript
+<pre className="text-xs bg-muted p-2 rounded overflow-auto">
+  {JSON.stringify(exam.analysis.findings, null, 2)}
+</pre>
+```
+
+Isso nao e legivel para um laudo medico. Os dados estao estruturados corretamente no banco (layers, biomarkers, measurements, etc), mas nao estao sendo interpretados e formatados adequadamente.
 
 ---
 
-## Arquitetura da Solucao
+## Solucao Proposta
+
+Criar componentes especializados de formatacao para cada tipo de exame que transformam o JSON estruturado em texto clinico legivel, seguindo o padrao de laudo medico.
+
+### Formato Esperado (Exemplo para OCT Macular):
 
 ```text
-+------------------+       +----------------------+       +------------------+
-|  pg_cron         |       | Edge Function        |       | Database         |
-|  (a cada 5 min)  | ----> | cleanup-stuck-exams  | ----> | Function         |
-+------------------+       +----------------------+       | + UPDATE exams   |
-                                                          +------------------+
+TOMOGRAFIA DE COERENCIA OPTICA (OCT) - MACULAR
+
+Qualidade da Imagem: Boa
+
+OLHO DIREITO / OLHO ESQUERDO
+
+Interface Vitreorretiniana
+- MLI: Presenca de linha hiperreflectiva aderida a superficie, 
+  compativel com membrana epirretiniana
+
+Camadas Retinianas Internas
+- CFNR: Espessura e refletividade normais
+- CCG: Espessura e refletividade normais
+- CPI: Espessura e refletividade normais
+- CNI: Espessura e refletividade normais
+
+Camadas Retinianas Externas
+- CPE: Espessura e refletividade normais
+- CNE: Espessura e refletividade normais
+- Zona Elipsoide: Linha continua e bem definida
+
+Complexo EPR-Coriocapilar
+- EPR: Complexo EPR/Membrana de Bruch integro
+- Membrana de Bruch: Continua e sem interrupcoes
+
+Coroide
+- Espessura aparentemente normal
+
+MEDIDAS
+- Espessura Central Foveal: 192 um (normal)
+
+BIOMARCADORES
+[badges coloridas indicando presenca/ausencia]
+
+NOTAS CLINICAS
+[texto livre do ai_analysis.findings.clinical_notes]
 ```
 
 ---
 
-## Implementacao
+## Arquitetura de Componentes
 
-### 1. Criar Database Function
+### 1. Componente Principal: AnalysisDisplay
 
-Uma funcao SQL que atualiza exames travados e retorna informacoes sobre os exames afetados:
-
-```sql
-CREATE OR REPLACE FUNCTION cleanup_stuck_analyzing_exams()
-RETURNS TABLE(
-  cleaned_count INTEGER,
-  exam_ids UUID[]
-) AS $$
-DECLARE
-  affected_ids UUID[];
-  count_cleaned INTEGER;
-BEGIN
-  -- Coletar IDs dos exames que serao resetados
-  SELECT ARRAY_AGG(id) INTO affected_ids
-  FROM exams
-  WHERE status = 'analyzing'
-    AND updated_at < NOW() - INTERVAL '5 minutes';
-  
-  -- Atualizar status para pending
-  UPDATE exams
-  SET status = 'pending',
-      updated_at = NOW()
-  WHERE status = 'analyzing'
-    AND updated_at < NOW() - INTERVAL '5 minutes';
-  
-  GET DIAGNOSTICS count_cleaned = ROW_COUNT;
-  
-  -- Registrar no audit_log para rastreabilidade
-  IF count_cleaned > 0 THEN
-    INSERT INTO audit_log (action, table_name, new_data)
-    VALUES (
-      'auto_cleanup_stuck_exams',
-      'exams',
-      jsonb_build_object(
-        'cleaned_count', count_cleaned,
-        'exam_ids', affected_ids,
-        'cleanup_time', NOW()
-      )
-    );
-  END IF;
-  
-  RETURN QUERY SELECT count_cleaned, COALESCE(affected_ids, ARRAY[]::UUID[]);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+```text
+src/components/exam/
+├── AnalysisDisplay.tsx         <- Componente principal (switch por tipo)
+├── OctMacularDisplay.tsx       <- Formatacao OCT Macular
+├── OctNerveDisplay.tsx         <- Formatacao OCT Nervo Optico
+├── RetinographyDisplay.tsx     <- Formatacao Retinografia
+├── BiomarkersDisplay.tsx       <- Badges de biomarcadores
+├── MeasurementsTable.tsx       <- Tabela de medidas
+└── LayersDisplay.tsx           <- Display de camadas retinianas
 ```
 
-### 2. Criar Edge Function (cleanup-stuck-exams)
+### 2. Mapeamento de Labels em Portugues
 
-Nova Edge Function que pode ser chamada periodicamente:
-
-**Arquivo:** `supabase/functions/cleanup-stuck-exams/index.ts`
+Criar dicionario para traduzir as keys do JSON para termos medicos:
 
 ```typescript
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const layerLabels = {
+  mli: "Membrana Limitante Interna (MLI)",
+  cfnr: "Camada de Fibras Nervosas da Retina (CFNR)",
+  ccg: "Camada de Celulas Ganglionares (CCG)",
+  cpi: "Camada Plexiforme Interna (CPI)",
+  cni: "Camada Nuclear Interna (CNI)",
+  cpe: "Camada Plexiforme Externa (CPE)",
+  cne: "Camada Nuclear Externa (CNE)",
+  zona_elipsoide: "Zona Elipsoide (Linha IS/OS)",
+  epr: "Epitelio Pigmentado da Retina (EPR)",
+  membrana_bruch: "Membrana de Bruch",
+  coroide: "Coroide",
 };
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    
-    // Chamar a funcao de limpeza
-    const { data, error } = await supabase.rpc('cleanup_stuck_analyzing_exams');
-    
-    if (error) throw error;
-    
-    console.log('[cleanup-stuck-exams] Cleanup result:', data);
-    
-    return new Response(
-      JSON.stringify({
-        success: true,
-        cleaned_count: data?.[0]?.cleaned_count || 0,
-        exam_ids: data?.[0]?.exam_ids || [],
-        timestamp: new Date().toISOString()
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
-      }
-    );
-  } catch (error) {
-    console.error('[cleanup-stuck-exams] Error:', error);
-    return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      }
-    );
-  }
-});
-```
-
-### 3. Configurar Cron Job com pg_cron
-
-Agendar a execucao automatica a cada 5 minutos usando SQL:
-
-```sql
--- Habilitar extensoes necessarias
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
-
--- Agendar o cron job
-SELECT cron.schedule(
-  'cleanup-stuck-analyzing-exams',
-  '*/5 * * * *',
-  $$
-  SELECT
-    net.http_post(
-      url := 'https://rhjgzlaksbmzyidybgyf.supabase.co/functions/v1/cleanup-stuck-exams',
-      headers := '{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoamd6bGFrc2JtenlpZHliZ3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk0Nzc0NzIsImV4cCI6MjA4NTA1MzQ3Mn0.R6FjKW10gQGamvPq06ASloqNkQZ67-Cs2b0EoPrRo4Q"}'::jsonb,
-      body := '{}'::jsonb
-    ) as request_id;
-  $$
-);
-```
-
-### 4. Atualizar supabase/config.toml
-
-Adicionar configuracao da nova Edge Function:
-
-```toml
-project_id = "rhjgzlaksbmzyidybgyf"
-
-[functions.analyze-image]
-verify_jwt = false
-
-[functions.share-report]
-verify_jwt = false
-
-[functions.cleanup-stuck-exams]
-verify_jwt = false
+const biomarkerLabels = {
+  fluido_intraretiniano: "Fluido Intraretiniano",
+  fluido_subretiniano: "Fluido Subretiniano",
+  dep: "Descolamento do EPR",
+  drusas: "Drusas",
+  membrana_epirretiniana: "Membrana Epirretiniana",
+  edema_macular: "Edema Macular",
+  // ...
+};
 ```
 
 ---
 
-## Resumo de Arquivos
+## Implementacao Detalhada
 
-| Arquivo/Recurso | Acao | Descricao |
-|-----------------|------|-----------|
-| Database Function | Criar | `cleanup_stuck_analyzing_exams()` |
-| `supabase/functions/cleanup-stuck-exams/index.ts` | Criar | Nova Edge Function |
-| `supabase/config.toml` | Atualizar | Adicionar config da nova funcao |
-| Cron Job | Configurar | Agendar via SQL |
+### Arquivo: src/components/exam/AnalysisDisplay.tsx
+
+Componente que recebe o `exam_type` e os dados da analise, e renderiza o display apropriado:
+
+```typescript
+interface AnalysisDisplayProps {
+  examType: string;
+  analysis: {
+    quality_score?: string;
+    findings?: any;
+    biomarkers?: any;
+    measurements?: any;
+    diagnosis?: string[];
+    recommendations?: string[];
+    risk_classification?: string;
+  };
+  eye: string;
+}
+
+export function AnalysisDisplay({ examType, analysis, eye }: AnalysisDisplayProps) {
+  switch (examType) {
+    case 'oct_macular':
+      return <OctMacularDisplay analysis={analysis} eye={eye} />;
+    case 'oct_nerve':
+      return <OctNerveDisplay analysis={analysis} eye={eye} />;
+    case 'retinography':
+      return <RetinographyDisplay analysis={analysis} eye={eye} />;
+    default:
+      return <GenericDisplay analysis={analysis} />;
+  }
+}
+```
+
+### Arquivo: src/components/exam/OctMacularDisplay.tsx
+
+Display formatado para OCT Macular com secoes claras:
+
+**Secoes:**
+1. Qualidade da Imagem (badge colorida)
+2. Interface Vitreorretiniana
+3. Camadas Retinianas Internas (CFNR, CCG, CPI, CNI)
+4. Camadas Retinianas Externas (CPE, CNE, Zona Elipsoide)
+5. Complexo EPR-Coriocapilar
+6. Coroide
+7. Medidas (tabela)
+8. Biomarcadores Identificados (badges)
+9. Notas Clinicas
+
+**Logica de cores para status:**
+- `normal` = verde (✓)
+- `alterada/alterado` = vermelho (!)
+- `ausente` = amarelo (⚠)
+
+### Arquivo: src/components/exam/BiomarkersDisplay.tsx
+
+Exibicao de biomarcadores como badges coloridas:
+
+```typescript
+interface BiomarkerBadgeProps {
+  name: string;
+  data: {
+    present: boolean;
+    severity?: string;
+    location?: string;
+    type?: string;
+  };
+}
+
+// Badge verde = ausente/normal
+// Badge vermelha = presente (achado patologico)
+// Badge amarela = leve/borderline
+```
+
+### Arquivo: src/components/exam/MeasurementsTable.tsx
+
+Tabela de medidas com valores de referencia:
+
+| Parametro | Valor | Classificacao |
+|-----------|-------|---------------|
+| Espessura Central | 192 um | Normal |
+| Espessura Coroide | - | - |
+
+---
+
+## Modificacoes no ExamView.tsx
+
+Substituir o bloco de exibicao de achados (linhas 741-757):
+
+**ANTES:**
+```jsx
+{exam.analysis.findings && (
+  <AccordionItem value="findings">
+    <AccordionTrigger>Achados</AccordionTrigger>
+    <AccordionContent>
+      <pre className="text-xs bg-muted p-2 rounded overflow-auto">
+        {JSON.stringify(exam.analysis.findings, null, 2)}
+      </pre>
+    </AccordionContent>
+  </AccordionItem>
+)}
+```
+
+**DEPOIS:**
+```jsx
+<AnalysisDisplay 
+  examType={exam.exam_type}
+  analysis={exam.analysis}
+  eye={exam.eye}
+/>
+```
+
+O novo componente substitui todo o Accordion existente com uma visualizacao estruturada e profissional.
+
+---
+
+## Estrutura Visual do Novo Display
+
+```text
++--------------------------------------------------+
+| ANALISE DA IA                       [Re-analisar] |
++--------------------------------------------------+
+| Qualidade: [Boa ✓]                               |
++--------------------------------------------------+
+| INTERFACE VITREORRETINIANA                       |
+| ┌──────────────────────────────────────────────┐ |
+| │ MLI  [Alterada !]                            │ |
+| │ Presenca de linha hiperreflectiva aderida    │ |
+| │ a superficie, compativel com MER             │ |
+| └──────────────────────────────────────────────┘ |
++--------------------------------------------------+
+| CAMADAS RETINIANAS INTERNAS                      |
+| ┌──────────────────────────────────────────────┐ |
+| │ CFNR [Normal ✓] Espessura e reflet. normais  │ |
+| │ CCG  [Normal ✓] Espessura e reflet. normais  │ |
+| │ CPI  [Normal ✓] Espessura e reflet. normais  │ |
+| │ CNI  [Normal ✓] Espessura e reflet. normais  │ |
+| └──────────────────────────────────────────────┘ |
++--------------------------------------------------+
+| CAMADAS RETINIANAS EXTERNAS                      |
+| ┌──────────────────────────────────────────────┐ |
+| │ CPE  [Normal ✓] Espessura e reflet. normais  │ |
+| │ CNE  [Normal ✓] Espessura e reflet. normais  │ |
+| │ ZE   [Normal ✓] Linha continua               │ |
+| └──────────────────────────────────────────────┘ |
++--------------------------------------------------+
+| COMPLEXO EPR-CORIOCAPILAR                        |
+| ┌──────────────────────────────────────────────┐ |
+| │ EPR  [Normal ✓] Integro, sem descontinuidade │ |
+| │ MB   [Normal ✓] Continua                     │ |
+| └──────────────────────────────────────────────┘ |
++--------------------------------------------------+
+| MEDIDAS                                          |
+| ┌──────────────────────────────────────────────┐ |
+| │ Espessura Central Foveal: 192 um [Normal]    │ |
+| └──────────────────────────────────────────────┘ |
++--------------------------------------------------+
+| BIOMARCADORES                                    |
+| ┌──────────────────────────────────────────────┐ |
+| │ [MER Leve] [Sem fluido] [Sem drusas]        │ |
+| └──────────────────────────────────────────────┘ |
++--------------------------------------------------+
+| NOTAS CLINICAS                                   |
+| ┌──────────────────────────────────────────────┐ |
+| │ Analise baseada no exame do olho esquerdo... │ |
+| └──────────────────────────────────────────────┘ |
++--------------------------------------------------+
+| IMPRESSAO DIAGNOSTICA                            |
+| • Membrana Epirretiniana Leve (Celofane Macular) |
+| • Achados similares e simetricos em OD           |
++--------------------------------------------------+
+| RECOMENDACOES                                    |
+| • Monitoramento clinico e OCT seriado            |
+| • Auto-monitoramento com Tela de Amsler          |
+| • Nao ha indicacao cirurgica no momento          |
++--------------------------------------------------+
+```
+
+---
+
+## Arquivos a Criar
+
+| Arquivo | Descricao |
+|---------|-----------|
+| `src/components/exam/AnalysisDisplay.tsx` | Componente principal (router por tipo) |
+| `src/components/exam/OctMacularDisplay.tsx` | Display OCT Macular |
+| `src/components/exam/OctNerveDisplay.tsx` | Display OCT Nervo Optico |
+| `src/components/exam/RetinographyDisplay.tsx` | Display Retinografia |
+| `src/components/exam/BiomarkersDisplay.tsx` | Badges de biomarcadores |
+| `src/components/exam/MeasurementsTable.tsx` | Tabela de medidas |
+| `src/components/exam/LayerItem.tsx` | Item individual de camada |
+| `src/components/exam/analysisLabels.ts` | Dicionario de labels PT-BR |
+
+## Arquivos a Modificar
+
+| Arquivo | Modificacao |
+|---------|-------------|
+| `src/pages/ExamView.tsx` | Substituir secao de Achados pelo AnalysisDisplay |
+| `src/components/pdf/ExamReportPdf.tsx` | Adaptar formatacao para PDF |
 
 ---
 
 ## Beneficios
 
-1. **Automatico**: Executa a cada 5 minutos sem intervencao manual
-2. **Rastreavel**: Registra limpezas no audit_log
-3. **Seguro**: Usa SECURITY DEFINER para acesso controlado
-4. **Observavel**: Edge Function retorna metricas de limpeza
-5. **Robusto**: Funciona mesmo se usuario fechar o navegador
+1. **Laudo Profissional**: Exibicao formatada e estruturada
+2. **Codigo Reutilizavel**: Componentes modulares por tipo de exame
+3. **Consistencia**: Mesma estrutura visual no frontend e PDF
+4. **Legibilidade**: Badges coloridas para status rapido
+5. **Escalabilidade**: Facil adicionar novos tipos de exame
+6. **Internacionalizacao**: Labels centralizadas em arquivo separado
 
 ---
 
-## Fluxo de Operacao
+## Consideracoes Tecnicas
 
-```text
-1. Cron job dispara a cada 5 minutos
-   |
-   v
-2. Chama Edge Function cleanup-stuck-exams
-   |
-   v
-3. Edge Function executa RPC cleanup_stuck_analyzing_exams()
-   |
-   v
-4. Database Function:
-   - Identifica exames com status='analyzing' e updated_at < 5min
-   - Atualiza status para 'pending'
-   - Registra no audit_log
-   - Retorna contagem de exames limpos
-   |
-   v
-5. Exames aparecem disponiveis para re-analise no frontend
-```
-
----
-
-## Monitoramento
-
-Para verificar se o cron job esta funcionando:
-
-```sql
--- Ver jobs agendados
-SELECT * FROM cron.job;
-
--- Ver historico de execucoes
-SELECT * FROM cron.job_run_details 
-ORDER BY start_time DESC 
-LIMIT 20;
-```
-
-Para ver exames que foram limpos automaticamente:
-
-```sql
-SELECT * FROM audit_log 
-WHERE action = 'auto_cleanup_stuck_exams' 
-ORDER BY created_at DESC;
-```
+- Os componentes usarao shadcn/ui existentes (Card, Badge, Table)
+- Cores seguirao o design system atual (status-normal, status-abnormal, etc)
+- Tooltips explicativos para termos medicos
+- Responsividade para visualizacao mobile
+- A mesma logica de formatacao sera usada no PDF para consistencia
