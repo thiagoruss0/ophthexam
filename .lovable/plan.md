@@ -1,203 +1,180 @@
 
 
-# Plano: Separacao de Achados por Olho (OD/OE) no Relatorio
+# Plano: Adicionar Funcao de Deletar Exame
 
-## Problema Identificado
+## Objetivo
 
-Quando um exame e marcado como `eye: both` (ambos os olhos), o relatorio final exibe os achados como se fossem de um unico olho. O formato correto para laudo deve:
-
-1. Mostrar **OLHO DIREITO** e **OLHO ESQUERDO** em secoes separadas
-2. Sempre exibir a **Espessura Foveal Central** de cada olho
-3. Seguir o padrao clinico de relatorios oftalmologicos
+Adicionar um botao de exclusao na tabela de historico de exames que permite ao medico deletar exames com confirmacao de seguranca.
 
 ---
 
 ## Arquitetura da Solucao
 
-A solucao envolve modificacoes em dois niveis:
+### 1. Componente de Interface
 
-### Nivel 1: Frontend (Exibicao)
-- Modificar os componentes de display para renderizar cada olho separadamente quando `eye === "both"`
-- Criar estrutura visual clara com cabecalhos "OLHO DIREITO" e "OLHO ESQUERDO"
+Adicionar na coluna "Acoes" da tabela um botao de lixeira (Trash) ao lado do botao de visualizar (Eye), que abre um dialogo de confirmacao antes de executar a exclusao.
 
-### Nivel 2: Backend (Analise de IA)
-- Modificar o prompt da IA para retornar dados estruturados por olho
-- Atualizar o mapeamento de resposta para preservar a estrutura bilateral
+### 2. Estrutura Visual
+
+```text
++-------------------------------------------+
+| Acoes                                     |
+| [Eye] [Trash]                             |
++-------------------------------------------+
+
+Ao clicar em Trash:
++------------------------------------------+
+| Excluir Exame?                           |
+|------------------------------------------|
+| Esta acao nao pode ser desfeita.         |
+| O exame e todos os dados associados      |
+| (imagens, analises, laudos) serao        |
+| permanentemente removidos.               |
+|                                          |
+| Paciente: ADALGIZA MARIA COSTA DANTAS    |
+| Tipo: OCT Macular                        |
+| Data: 31/10/2023                         |
+|                                          |
+|        [Cancelar] [Excluir]              |
++------------------------------------------+
+```
 
 ---
 
 ## Implementacao Detalhada
 
-### 1. Modificar Prompt da IA (Edge Function)
+### Modificacoes no History.tsx
 
-Atualizar o prompt OCT_MACULAR_PROMPT para solicitar analise bilateral:
-
-**Estrutura de Resposta Atualizada:**
-```json
-{
-  "bilateral": true,
-  "od": {
-    "quality": {...},
-    "layers": {...},
-    "biomarkers": {...},
-    "measurements": {
-      "central_foveal_thickness": {"value": 198, "unit": "um", "classification": "normal"}
-    }
-  },
-  "oe": {
-    "quality": {...},
-    "layers": {...},
-    "biomarkers": {...},
-    "measurements": {
-      "central_foveal_thickness": {"value": 192, "unit": "um", "classification": "normal"}
-    }
-  },
-  "comparison": {
-    "symmetry": "simetrico|assimetrico",
-    "notes": "Achados bilaterais e simetricos..."
-  },
-  "diagnosis": [...],
-  "recommendations": [...]
-}
-```
-
-### 2. Atualizar Mapeamento no Edge Function
-
-**Arquivo:** `supabase/functions/analyze-image/index.ts`
-
-Modificar a funcao `mapResponseToAnalysis` para:
-- Detectar se a resposta e bilateral
-- Preservar a estrutura `od` e `oe` no campo `findings`
-- Extrair medidas de cada olho para o campo `measurements`
-
-### 3. Atualizar Estrutura do Banco de Dados
-
-O campo `findings` (JSONB) ja suporta estrutura aninhada. A nova estrutura sera:
-
-```json
-{
-  "bilateral": true,
-  "od": {
-    "layers": {...},
-    "clinical_notes": "..."
-  },
-  "oe": {
-    "layers": {...},
-    "clinical_notes": "..."
-  },
-  "comparison_notes": "..."
-}
-```
-
-O campo `measurements` sera atualizado para:
-```json
-{
-  "od": {
-    "central_foveal_thickness": {"value": 198, "unit": "um", "classification": "normal"}
-  },
-  "oe": {
-    "central_foveal_thickness": {"value": 192, "unit": "um", "classification": "normal"}
-  }
-}
-```
-
-### 4. Criar Componente BilateralDisplay
-
-**Novo Arquivo:** `src/components/exam/BilateralDisplay.tsx`
-
-Componente wrapper que:
-- Detecta se a analise e bilateral (`findings.bilateral === true`)
-- Renderiza duas colunas ou secoes para OD e OE
-- Exibe comparacao entre os olhos
-
-```text
-+--------------------------------------------------+
-| TOMOGRAFIA DE COERENCIA OPTICA - MACULAR         |
-| Qualidade Global: Boa                            |
-+--------------------------------------------------+
-
-+------------------------+   +------------------------+
-| OLHO DIREITO (OD)      |   | OLHO ESQUERDO (OE)     |
-+------------------------+   +------------------------+
-| Interface Vitreorret.  |   | Interface Vitreorret.  |
-| [Normal]               |   | [Normal]               |
-|------------------------|   |------------------------|
-| Camadas Internas       |   | Camadas Internas       |
-| [Normal]               |   | [Normal]               |
-|------------------------|   |------------------------|
-| Camadas Externas       |   | Camadas Externas       |
-| [Normal]               |   | [Normal]               |
-|------------------------|   |------------------------|
-| Complexo EPR           |   | Complexo EPR           |
-| [Normal]               |   | [Normal]               |
-|------------------------|   |------------------------|
-| ESPESSURA FOVEAL       |   | ESPESSURA FOVEAL       |
-| 198 um [Normal]        |   | 192 um [Normal]        |
-+------------------------+   +------------------------+
-
-+--------------------------------------------------+
-| COMPARACAO BILATERAL                             |
-| Achados bilaterais e simetricos.                 |
-+--------------------------------------------------+
-
-| IMPRESSAO DIAGNOSTICA                            |
-| - Membrana Epirretiniana Leve (bilateral)        |
-+--------------------------------------------------+
-
-| RECOMENDACOES                                    |
-| - Monitoramento com OCT seriado                  |
-+--------------------------------------------------+
-```
-
-### 5. Atualizar OctMacularDisplay
-
-**Arquivo:** `src/components/exam/OctMacularDisplay.tsx`
-
-Modificar para:
-1. Detectar se `findings.bilateral === true`
-2. Se bilateral: renderizar `BilateralDisplay`
-3. Se unilateral: manter comportamento atual
-
+**1. Adicionar imports necessarios:**
 ```typescript
-export function OctMacularDisplay({ analysis, eye }: OctMacularDisplayProps) {
-  const findings = analysis.findings || {};
-  
-  // Check if bilateral analysis
-  if (findings.bilateral && findings.od && findings.oe) {
-    return (
-      <BilateralOctMacularDisplay 
-        analysis={analysis} 
-        odFindings={findings.od}
-        oeFindings={findings.oe}
-        comparison={findings.comparison_notes}
-      />
-    );
-  }
-  
-  // Single eye display (current behavior)
-  return <SingleEyeOctMacularDisplay analysis={analysis} eye={eye} />;
-}
+import { Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 ```
 
-### 6. Atualizar MeasurementsTable
-
-**Arquivo:** `src/components/exam/MeasurementsTable.tsx`
-
-Adicionar suporte para medidas bilaterais:
-
+**2. Adicionar estado para controle de exclusao:**
 ```typescript
-// Nova prop para indicar o olho
-interface MeasurementsTableProps {
-  measurements: Record<string, any> | null;
-  compact?: boolean;
-  eye?: 'od' | 'oe' | 'both';
-}
-
-// Se measurements tem estrutura bilateral
-if (measurements.od && measurements.oe) {
-  return <BilateralMeasurementsTable od={measurements.od} oe={measurements.oe} />;
-}
+const [deletingExamId, setDeletingExamId] = useState<string | null>(null);
 ```
+
+**3. Criar funcao de exclusao:**
+```typescript
+const handleDeleteExam = async (examId: string) => {
+  setDeletingExamId(examId);
+  try {
+    // Deletar imagens do Storage primeiro
+    const { data: images } = await supabase
+      .from("exam_images")
+      .select("image_url")
+      .eq("exam_id", examId);
+    
+    if (images && images.length > 0) {
+      const paths = images.map(img => {
+        // Extrair path do URL
+        const url = new URL(img.image_url);
+        return url.pathname.split('/exam-images/')[1];
+      }).filter(Boolean);
+      
+      if (paths.length > 0) {
+        await supabase.storage
+          .from("exam-images")
+          .remove(paths);
+      }
+    }
+    
+    // Deletar exame (cascade deleta images, analysis, reports, feedback)
+    const { error } = await supabase
+      .from("exams")
+      .delete()
+      .eq("id", examId);
+
+    if (error) throw error;
+
+    toast({ title: "Exame excluido com sucesso!" });
+    
+    // Atualizar lista
+    fetchExams();
+  } catch (error) {
+    console.error("Error deleting exam:", error);
+    toast({ 
+      title: "Erro ao excluir exame", 
+      variant: "destructive" 
+    });
+  } finally {
+    setDeletingExamId(null);
+  }
+};
+```
+
+**4. Adicionar botao na coluna de acoes:**
+```tsx
+<TableCell className="text-right">
+  <div className="flex items-center justify-end gap-1">
+    <Link to={`/exame/${exam.id}`}>
+      <Button variant="ghost" size="icon">
+        <Eye className="h-4 w-4" />
+      </Button>
+    </Link>
+    
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button 
+          variant="ghost" 
+          size="icon"
+          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir Exame?</AlertDialogTitle>
+          <AlertDialogDescription className="space-y-2">
+            <p>Esta acao nao pode ser desfeita.</p>
+            <p>O exame e todos os dados associados (imagens, analises, laudos) serao permanentemente removidos.</p>
+            <div className="mt-4 p-3 bg-muted rounded-md text-sm">
+              <p><strong>Paciente:</strong> {exam.patient_name}</p>
+              <p><strong>Tipo:</strong> {examTypeLabels[exam.exam_type]}</p>
+              <p><strong>Data:</strong> {new Date(exam.exam_date).toLocaleDateString("pt-BR")}</p>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => handleDeleteExam(exam.id)}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={deletingExamId === exam.id}
+          >
+            {deletingExamId === exam.id ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : null}
+            Excluir
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </div>
+</TableCell>
+```
+
+---
+
+## Seguranca
+
+A exclusao ja esta protegida por RLS no banco de dados:
+- Policy `"Approved doctors can delete their exams"` garante que apenas o medico dono pode excluir
+- Cascade delete remove automaticamente: `exam_images`, `ai_analysis`, `reports`, `ai_feedback`
+- Imagens no Storage sao deletadas manualmente antes do registro
 
 ---
 
@@ -205,78 +182,41 @@ if (measurements.od && measurements.oe) {
 
 | Arquivo | Modificacao |
 |---------|-------------|
-| `supabase/functions/analyze-image/index.ts` | Atualizar prompt para analise bilateral, modificar mapeamento |
-| `src/components/exam/OctMacularDisplay.tsx` | Detectar e delegar para display bilateral |
-| `src/components/exam/MeasurementsTable.tsx` | Suportar medidas por olho |
-| `src/components/exam/OctNerveDisplay.tsx` | Mesma logica bilateral |
-| `src/components/exam/RetinographyDisplay.tsx` | Mesma logica bilateral |
-| `src/components/exam/AnalysisDisplay.tsx` | Passar informacoes de ambos os olhos |
-
-## Arquivos a Criar
-
-| Arquivo | Descricao |
-|---------|-----------|
-| `src/components/exam/BilateralOctMacularDisplay.tsx` | Display bilateral para OCT Macular |
-| `src/components/exam/SingleEyeDisplay.tsx` | Componente reutilizavel para um olho |
-| `src/components/exam/BilateralMeasurementsTable.tsx` | Tabela comparativa OD/OE |
-| `src/components/exam/ComparisonSection.tsx` | Secao de comparacao bilateral |
+| `src/pages/History.tsx` | Adicionar AlertDialog, estado de loading, funcao de delete, botao na tabela |
 
 ---
 
-## Fluxo de Dados Atualizado
+## Fluxo de Exclusao
 
 ```text
-1. Upload de Imagem (exam.eye = "both")
+1. Usuario clica no icone de lixeira
    |
    v
-2. Edge Function detect eye="both"
+2. AlertDialog abre com detalhes do exame
    |
    v
-3. Prompt inclui instrucao para analise bilateral
+3. Usuario confirma clicando em "Excluir"
    |
    v
-4. IA retorna JSON com estrutura {od: {...}, oe: {...}}
+4. Sistema deleta imagens do Storage
    |
    v
-5. Mapeamento salva em findings: {bilateral: true, od: {...}, oe: {...}}
+5. Sistema deleta exame do banco
    |
    v
-6. Frontend detecta findings.bilateral === true
+6. Cascade delete remove dados relacionados
    |
    v
-7. BilateralDisplay renderiza OD e OE lado a lado
-   |
-   v
-8. Cada olho mostra sua Espessura Foveal Central
+7. Toast de sucesso e lista atualizada
 ```
 
 ---
 
-## Regras de Negocio
+## Consideracoes
 
-1. **Espessura Foveal Central**: SEMPRE deve ser exibida para cada olho
-2. **Quando `eye === "both"`**: Mostrar secoes separadas para OD e OE
-3. **Quando `eye === "od"` ou `eye === "oe"`**: Manter display atual de um unico olho
-4. **Comparacao**: Incluir secao de comparacao entre os olhos quando bilateral
-5. **Simetria**: Indicar visualmente se achados sao simetricos ou assimetricos
-
----
-
-## Beneficios
-
-1. **Clareza Clinica**: Relatorio segue padrao de laudo oftalmologico
-2. **Espessura por Olho**: Medida mais importante sempre visivel
-3. **Comparacao Visual**: Facilita identificar assimetrias
-4. **Retrocompatibilidade**: Exames existentes continuam funcionando
-5. **PDF Consistente**: Mesma estrutura sera usada no PDF
-
----
-
-## Consideracoes Tecnicas
-
-- O campo `findings` (JSONB) suporta qualquer estrutura aninhada
-- Exames ja analisados com estrutura antiga continuarao funcionando
-- A deteccao de bilateral e feita pelo campo `findings.bilateral`
-- O prompt da IA sera atualizado para gerar a nova estrutura automaticamente
-- Analises antigas sem estrutura bilateral mostrarao no display antigo (single eye)
+- Botao de exclusao fica vermelho para indicar acao destrutiva
+- Loading spinner durante a exclusao
+- Detalhes do exame mostrados no dialogo para evitar exclusao acidental
+- Funciona com as RLS policies existentes (medico so pode excluir seus proprios exames)
+- Storage cleanup garante que imagens nao ficam orfas
 
