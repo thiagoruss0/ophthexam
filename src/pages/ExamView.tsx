@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { AiFeedbackForm } from "@/components/exam/AiFeedbackForm";
+import { AnalysisDisplay } from "@/components/exam/AnalysisDisplay";
 import {
   generateExamPdf,
   downloadPdf,
@@ -716,96 +716,11 @@ export default function ExamViewPage() {
               </CardHeader>
               <CardContent>
                 {exam.analysis ? (
-                  <Accordion type="multiple" defaultValue={["findings", "biomarkers"]}>
-                    {/* Quality */}
-                    {exam.analysis.quality_score && (
-                      <AccordionItem value="quality">
-                        <AccordionTrigger>Qualidade da Imagem</AccordionTrigger>
-                        <AccordionContent>
-                          <Badge
-                            variant="outline"
-                            className={
-                              exam.analysis.quality_score === "Boa"
-                                ? "status-normal"
-                                : exam.analysis.quality_score === "Moderada"
-                                ? "status-borderline"
-                                : "status-abnormal"
-                            }
-                          >
-                            {exam.analysis.quality_score}
-                          </Badge>
-                        </AccordionContent>
-                      </AccordionItem>
-                    )}
-
-                    {/* Findings */}
-                    {exam.analysis.findings && (
-                      <AccordionItem value="findings">
-                        <AccordionTrigger>Achados</AccordionTrigger>
-                        <AccordionContent>
-                          <div className="prose prose-sm max-w-none">
-                            {typeof exam.analysis.findings === "string" ? (
-                              <p>{exam.analysis.findings}</p>
-                            ) : (
-                              <pre className="text-xs bg-muted p-2 rounded overflow-auto">
-                                {JSON.stringify(exam.analysis.findings, null, 2)}
-                              </pre>
-                            )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    )}
-
-                    {/* Biomarkers */}
-                    {exam.analysis.biomarkers && (
-                      <AccordionItem value="biomarkers">
-                        <AccordionTrigger>Biomarcadores</AccordionTrigger>
-                        <AccordionContent>
-                          <div className="flex flex-wrap gap-2">
-                            {Array.isArray(exam.analysis.biomarkers) ? (
-                              exam.analysis.biomarkers.map((b: string, i: number) => (
-                                <Badge key={i} variant="outline">
-                                  {b}
-                                </Badge>
-                              ))
-                            ) : (
-                              <pre className="text-xs bg-muted p-2 rounded overflow-auto w-full">
-                                {JSON.stringify(exam.analysis.biomarkers, null, 2)}
-                              </pre>
-                            )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    )}
-
-                    {/* Diagnosis */}
-                    {exam.analysis.diagnosis && exam.analysis.diagnosis.length > 0 && (
-                      <AccordionItem value="diagnosis">
-                        <AccordionTrigger>Impressão Diagnóstica</AccordionTrigger>
-                        <AccordionContent>
-                          <ul className="list-disc list-inside space-y-1">
-                            {exam.analysis.diagnosis.map((d: string, i: number) => (
-                              <li key={i}>{d}</li>
-                            ))}
-                          </ul>
-                        </AccordionContent>
-                      </AccordionItem>
-                    )}
-
-                    {/* Recommendations */}
-                    {exam.analysis.recommendations && exam.analysis.recommendations.length > 0 && (
-                      <AccordionItem value="recommendations">
-                        <AccordionTrigger>Recomendações</AccordionTrigger>
-                        <AccordionContent>
-                          <ul className="list-disc list-inside space-y-1">
-                            {exam.analysis.recommendations.map((r: string, i: number) => (
-                              <li key={i}>{r}</li>
-                            ))}
-                          </ul>
-                        </AccordionContent>
-                      </AccordionItem>
-                    )}
-                  </Accordion>
+                  <AnalysisDisplay 
+                    examType={exam.exam_type}
+                    analysis={exam.analysis}
+                    eye={exam.eye}
+                  />
                 ) : exam.status === "analyzing" ? (
                   <div className="text-center py-4 text-muted-foreground">
                     <p>Aguardando conclusão da análise...</p>
