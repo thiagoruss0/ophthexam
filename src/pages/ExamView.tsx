@@ -11,6 +11,15 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
+  generateExamPdf,
+  downloadPdf,
+  uploadPdfToStorage,
+  generatePdfFilename,
+  updateReportPdfUrl,
+  fetchImageAsBase64,
+} from "@/utils/generatePdf";
+import type { ReportData } from "@/utils/generatePdf";
+import {
   ArrowLeft,
   ZoomIn,
   ZoomOut,
@@ -67,6 +76,7 @@ export default function ExamViewPage() {
   const [doctorNotes, setDoctorNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -193,6 +203,90 @@ export default function ExamViewPage() {
       toast({ title: "Erro ao aprovar", variant: "destructive" });
     } finally {
       setIsApproving(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!exam || !profile) return;
+    
+    setIsExporting(true);
+    try {
+      // Fetch patient data
+      const { data: patientData } = await supabase
+        .from("patients")
+        .select("name, birth_date, record_number, gender")
+        .eq("id", exam.patient.id)
+        .single();
+
+      // Get image as base64 for PDF
+      let imageBase64: string | null = null;
+      if (exam.images[0]?.image_url) {
+        imageBase64 = await fetchImageAsBase64(exam.images[0].image_url);
+      }
+
+      // Prepare report data
+      const reportData: ReportData = {
+        exam: {
+          id: exam.id,
+          exam_type: exam.exam_type,
+          eye: exam.eye,
+          exam_date: exam.exam_date,
+          equipment: exam.equipment,
+          clinical_indication: exam.clinical_indication,
+          status: exam.status,
+        },
+        patient: {
+          name: patientData?.name || exam.patient.name,
+          birth_date: patientData?.birth_date || undefined,
+          record_number: patientData?.record_number || undefined,
+          gender: patientData?.gender || undefined,
+        },
+        analysis: exam.analysis,
+        doctorNotes,
+        profile: {
+          full_name: profile.full_name,
+          crm: profile.crm,
+          crm_uf: profile.crm_uf,
+          clinic_name: profile.clinic_name || undefined,
+          clinic_address: profile.clinic_address || undefined,
+          clinic_phone: profile.clinic_phone || undefined,
+          clinic_cnpj: profile.clinic_cnpj || undefined,
+          clinic_logo_url: profile.clinic_logo_url || undefined,
+          signature_url: profile.signature_url || undefined,
+          include_logo_in_pdf: profile.include_logo_in_pdf ?? true,
+          include_signature_in_pdf: profile.include_signature_in_pdf ?? true,
+        },
+        imageUrl: imageBase64 || exam.images[0]?.image_url,
+        approvedAt: exam.report?.approved_at || undefined,
+      };
+
+      // Generate PDF
+      const blob = await generateExamPdf(reportData);
+
+      // Upload to storage
+      const { url } = await uploadPdfToStorage(blob, exam.id);
+      if (url) {
+        await updateReportPdfUrl(exam.id, url);
+      }
+
+      // Download locally
+      const filename = generatePdfFilename(
+        patientData?.name || exam.patient.name,
+        exam.exam_type,
+        exam.exam_date
+      );
+      downloadPdf(blob, filename);
+
+      toast({ title: "PDF gerado com sucesso!" });
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      toast({ 
+        title: "Erro ao gerar PDF", 
+        description: "Tente novamente",
+        variant: "destructive" 
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -504,8 +598,17 @@ export default function ExamViewPage() {
 
                 {exam.status === "approved" && (
                   <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1">
-                      <Download className="h-4 w-4 mr-2" />
+                    <Button 
+                      variant="outline" 
+                      className="flex-1"
+                      onClick={handleExportPdf}
+                      disabled={isExporting}
+                    >
+                      {isExporting ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
                       Exportar PDF
                     </Button>
                     <Button variant="outline" className="flex-1">

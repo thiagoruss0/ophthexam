@@ -12,6 +12,8 @@ import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, User, Building, FileText, Settings } from "lucide-react";
+import { ImageUpload } from "@/components/settings/ImageUpload";
+import { SignaturePad } from "@/components/settings/SignaturePad";
 
 export default function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
@@ -32,6 +34,11 @@ export default function SettingsPage() {
   const [includeLogo, setIncludeLogo] = useState(profile?.include_logo_in_pdf ?? true);
   const [includeSignature, setIncludeSignature] = useState(profile?.include_signature_in_pdf ?? true);
   const [defaultTemplate, setDefaultTemplate] = useState(profile?.default_report_template || "");
+  
+  // URLs for images
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || "");
+  const [clinicLogoUrl, setClinicLogoUrl] = useState(profile?.clinic_logo_url || "");
+  const [signatureUrl, setSignatureUrl] = useState(profile?.signature_url || "");
 
   // Preferences
   const [emailNotifications, setEmailNotifications] = useState(profile?.email_notifications ?? true);
@@ -46,6 +53,7 @@ export default function SettingsPage() {
         .update({
           full_name: fullName,
           phone,
+          avatar_url: avatarUrl || null,
         })
         .eq("id", profile.id);
 
@@ -72,6 +80,7 @@ export default function SettingsPage() {
           clinic_address: clinicAddress,
           clinic_phone: clinicPhone,
           clinic_cnpj: clinicCnpj,
+          clinic_logo_url: clinicLogoUrl || null,
         })
         .eq("id", profile.id);
 
@@ -97,6 +106,7 @@ export default function SettingsPage() {
           include_logo_in_pdf: includeLogo,
           include_signature_in_pdf: includeSignature,
           default_report_template: defaultTemplate,
+          signature_url: signatureUrl || null,
         })
         .eq("id", profile.id);
 
@@ -178,20 +188,24 @@ export default function SettingsPage() {
                 <CardDescription>Gerencie seus dados pessoais e profissionais</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="flex items-center gap-4">
-                  <Avatar className="h-20 w-20">
-                    <AvatarImage src={profile?.avatar_url || undefined} />
-                    <AvatarFallback className="text-xl">
-                      {profile?.full_name ? getInitials(profile.full_name) : "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <Button variant="outline" size="sm">
-                      Alterar Foto
-                    </Button>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      JPG, PNG. Máximo 2MB.
-                    </p>
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <ImageUpload
+                    bucket="avatars"
+                    currentUrl={avatarUrl}
+                    onUpload={setAvatarUrl}
+                    onRemove={() => setAvatarUrl("")}
+                    maxSizeKB={500}
+                    aspectRatio="1/1"
+                    label="Foto do Perfil"
+                    description="Foto para identificação"
+                  />
+                  <div className="flex flex-col justify-center">
+                    <h3 className="font-medium mb-2">Dicas</h3>
+                    <ul className="text-sm text-muted-foreground space-y-1">
+                      <li>• Use uma foto profissional</li>
+                      <li>• Formato quadrado recomendado</li>
+                      <li>• Máximo 500KB após compressão</li>
+                    </ul>
                   </div>
                 </div>
 
@@ -298,6 +312,17 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
+                <ImageUpload
+                  bucket="clinic-logos"
+                  currentUrl={clinicLogoUrl}
+                  onUpload={setClinicLogoUrl}
+                  onRemove={() => setClinicLogoUrl("")}
+                  maxSizeKB={500}
+                  aspectRatio="3/1"
+                  label="Logo da Clínica"
+                  description="Aparecerá no cabeçalho dos laudos"
+                />
+
                 <Button onClick={handleSaveClinic} disabled={isSaving}>
                   {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   Salvar Alterações
@@ -346,6 +371,14 @@ export default function SettingsPage() {
                     rows={4}
                   />
                 </div>
+
+                {profile?.id && (
+                  <SignaturePad
+                    currentUrl={signatureUrl}
+                    onSave={setSignatureUrl}
+                    profileId={profile.id}
+                  />
+                )}
 
                 <Button onClick={handleSaveReportPrefs} disabled={isSaving}>
                   {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
