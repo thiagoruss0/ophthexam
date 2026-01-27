@@ -17,6 +17,7 @@ import HistoryPage from "./pages/History";
 import PatientPage from "./pages/Patient";
 import SettingsPage from "./pages/Settings";
 import AdminPage from "./pages/Admin";
+import SharedReportPage from "./pages/SharedReport";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/aguardando-aprovacao" element={<PendingApprovalPage />} />
+            <Route path="/laudo/:token" element={<SharedReportPage />} />
 
             {/* Protected Routes */}
             <Route

@@ -5,10 +5,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import {
   Table,
   TableBody,
@@ -17,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Filter, Download, Eye, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Download, Eye, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 interface Exam {
   id: string;
@@ -44,11 +45,15 @@ const statusLabels: Record<string, { label: string; variant: "default" | "second
 
 export default function HistoryPage() {
   const { profile } = useAuth();
+  const { toast } = useToast();
   const [exams, setExams] = useState<Exam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const perPage = 20;
@@ -57,7 +62,7 @@ export default function HistoryPage() {
     if (profile?.id) {
       fetchExams();
     }
-  }, [profile?.id, search, typeFilter, statusFilter, page]);
+  }, [profile?.id, search, typeFilter, statusFilter, dateFrom, dateTo, page]);
 
   const fetchExams = async () => {
     setIsLoading(true);
@@ -82,6 +87,14 @@ export default function HistoryPage() {
 
       if (statusFilter && (statusFilter === "pending" || statusFilter === "analyzing" || statusFilter === "analyzed" || statusFilter === "approved")) {
         query = query.eq("status", statusFilter);
+      }
+
+      if (dateFrom) {
+        query = query.gte("exam_date", dateFrom);
+      }
+
+      if (dateTo) {
+        query = query.lte("exam_date", dateTo);
       }
 
       const { data, count, error } = await query;
@@ -117,6 +130,94 @@ export default function HistoryPage() {
     }
   };
 
+  const handleExportCsv = async () => {
+    if (!profile?.id) return;
+    
+    setIsExporting(true);
+    try {
+      // Fetch ALL exams without pagination, applying the same filters
+      let query = supabase
+        .from("exams")
+        .select(`
+          id,
+          exam_type,
+          eye,
+          exam_date,
+          status,
+          patients (id, name)
+        `)
+        .eq("doctor_id", profile.id)
+        .order("exam_date", { ascending: false });
+
+      if (typeFilter && (typeFilter === "oct_macular" || typeFilter === "oct_nerve" || typeFilter === "retinography")) {
+        query = query.eq("exam_type", typeFilter);
+      }
+
+      if (statusFilter && (statusFilter === "pending" || statusFilter === "analyzing" || statusFilter === "analyzed" || statusFilter === "approved")) {
+        query = query.eq("status", statusFilter);
+      }
+
+      if (dateFrom) {
+        query = query.gte("exam_date", dateFrom);
+      }
+
+      if (dateTo) {
+        query = query.lte("exam_date", dateTo);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      let filteredData = data || [];
+
+      // Apply client-side search filter
+      if (search) {
+        filteredData = filteredData.filter((exam) =>
+          (exam.patients as any)?.name?.toLowerCase().includes(search.toLowerCase())
+        );
+      }
+
+      // Build CSV content
+      const header = ["Paciente", "Tipo de Exame", "Olho", "Data", "Status"];
+      const rows = filteredData.map((exam) => [
+        (exam.patients as any)?.name || "—",
+        examTypeLabels[exam.exam_type] || exam.exam_type,
+        getEyeLabel(exam.eye),
+        new Date(exam.exam_date).toLocaleDateString("pt-BR"),
+        statusLabels[exam.status]?.label || exam.status,
+      ]);
+
+      // Use semicolon as separator for Brazilian Excel compatibility
+      const csvContent = [header, ...rows]
+        .map((row) => row.map((cell) => `"${cell}"`).join(";"))
+        .join("\n");
+
+      // Add BOM for UTF-8 encoding
+      const bom = "\ufeff";
+      const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+
+      // Create download
+      const today = new Date().toISOString().split("T")[0];
+      const filename = `exames_${today}.csv`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({ title: "CSV exportado com sucesso!" });
+    } catch (error) {
+      console.error("Error exporting CSV:", error);
+      toast({ title: "Erro ao exportar CSV", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const getEyeLabel = (eye: string) => {
     switch (eye) {
       case "od": return "OD";
@@ -136,8 +237,16 @@ export default function HistoryPage() {
             <h1 className="text-2xl font-bold">Histórico de Exames</h1>
             <p className="text-muted-foreground">Visualize e gerencie todos os exames realizados</p>
           </div>
-          <Button variant="outline">
-            <Download className="h-4 w-4 mr-2" />
+          <Button 
+            variant="outline" 
+            onClick={handleExportCsv}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
             Exportar CSV
           </Button>
         </div>
@@ -178,6 +287,23 @@ export default function HistoryPage() {
                   <SelectItem value="approved">Aprovado</SelectItem>
                 </SelectContent>
               </Select>
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  placeholder="Data inicial"
+                  className="w-[150px]"
+                />
+                <span className="text-muted-foreground">até</span>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  placeholder="Data final"
+                  className="w-[150px]"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
