@@ -18,7 +18,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Download, Eye, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Search, Download, Eye, ChevronLeft, ChevronRight, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Exam {
   id: string;
@@ -56,6 +67,7 @@ export default function HistoryPage() {
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [deletingExamId, setDeletingExamId] = useState<string | null>(null);
   const perPage = 20;
 
   useEffect(() => {
@@ -227,6 +239,55 @@ export default function HistoryPage() {
     }
   };
 
+  const handleDeleteExam = async (examId: string) => {
+    setDeletingExamId(examId);
+    try {
+      // Deletar imagens do Storage primeiro
+      const { data: images } = await supabase
+        .from("exam_images")
+        .select("image_url")
+        .eq("exam_id", examId);
+      
+      if (images && images.length > 0) {
+        const paths = images.map(img => {
+          try {
+            const url = new URL(img.image_url);
+            return url.pathname.split('/exam-images/')[1];
+          } catch {
+            return null;
+          }
+        }).filter(Boolean) as string[];
+        
+        if (paths.length > 0) {
+          await supabase.storage
+            .from("exam-images")
+            .remove(paths);
+        }
+      }
+      
+      // Deletar exame (cascade deleta images, analysis, reports, feedback)
+      const { error } = await supabase
+        .from("exams")
+        .delete()
+        .eq("id", examId);
+
+      if (error) throw error;
+
+      toast({ title: "Exame excluído com sucesso!" });
+      
+      // Atualizar lista
+      fetchExams();
+    } catch (error) {
+      console.error("Error deleting exam:", error);
+      toast({ 
+        title: "Erro ao excluir exame", 
+        variant: "destructive" 
+      });
+    } finally {
+      setDeletingExamId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <DashboardHeader />
@@ -369,11 +430,54 @@ export default function HistoryPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link to={`/exame/${exam.id}`}>
-                          <Button variant="ghost" size="icon">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </Link>
+                        <div className="flex items-center justify-end gap-1">
+                          <Link to={`/exame/${exam.id}`}>
+                            <Button variant="ghost" size="icon">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Excluir Exame?</AlertDialogTitle>
+                                <AlertDialogDescription asChild>
+                                  <div className="space-y-2">
+                                    <p>Esta ação não pode ser desfeita.</p>
+                                    <p>O exame e todos os dados associados (imagens, análises, laudos) serão permanentemente removidos.</p>
+                                    <div className="mt-4 p-3 bg-muted rounded-md text-sm">
+                                      <p><strong>Paciente:</strong> {exam.patient_name}</p>
+                                      <p><strong>Tipo:</strong> {examTypeLabels[exam.exam_type]}</p>
+                                      <p><strong>Data:</strong> {new Date(exam.exam_date).toLocaleDateString("pt-BR")}</p>
+                                    </div>
+                                  </div>
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteExam(exam.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  disabled={deletingExamId === exam.id}
+                                >
+                                  {deletingExamId === exam.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  ) : null}
+                                  Excluir
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
