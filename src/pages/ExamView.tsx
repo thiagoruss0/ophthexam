@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,6 +33,7 @@ import {
   Eye,
   Calendar,
   User,
+  Copy,
 } from "lucide-react";
 
 interface ExamData {
@@ -77,14 +78,12 @@ export default function ExamViewPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      fetchExamData();
-    }
-  }, [id]);
-
-  const fetchExamData = async () => {
+  const fetchExamData = useCallback(async () => {
+    if (!id) return;
+    
     try {
       const { data, error } = await supabase
         .from("exams")
@@ -140,7 +139,24 @@ export default function ExamViewPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [id, toast]);
+
+  useEffect(() => {
+    if (id) {
+      fetchExamData();
+    }
+  }, [id, fetchExamData]);
+
+  // Auto-refresh when status is "analyzing"
+  useEffect(() => {
+    if (exam?.status !== "analyzing") return;
+
+    const interval = setInterval(() => {
+      fetchExamData();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [exam?.status, fetchExamData]);
 
   const handleSaveDraft = async () => {
     if (!exam) return;
@@ -290,6 +306,92 @@ export default function ExamViewPage() {
     }
   };
 
+  const handleShare = async () => {
+    if (!exam) return;
+    
+    setIsSharing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('share-report', {
+        body: { exam_id: exam.id },
+      });
+
+      if (error) throw error;
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(data.share_url);
+
+      const expiresAt = new Date(data.expires_at);
+      toast({ 
+        title: "Link copiado!", 
+        description: `Válido até ${expiresAt.toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`,
+      });
+    } catch (error) {
+      console.error("Error sharing report:", error);
+      toast({ 
+        title: "Erro ao compartilhar", 
+        description: "Tente novamente",
+        variant: "destructive" 
+      });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const handleReanalyze = async () => {
+    if (!exam) return;
+
+    const confirmed = window.confirm(
+      "Deseja substituir a análise atual? Esta ação não pode ser desfeita."
+    );
+    if (!confirmed) return;
+
+    setIsReanalyzing(true);
+    try {
+      // Delete existing analysis if any
+      if (exam.analysis?.id) {
+        await supabase
+          .from("ai_analysis")
+          .delete()
+          .eq("id", exam.analysis.id);
+      }
+
+      // Update exam status to analyzing
+      await supabase
+        .from("exams")
+        .update({ status: "analyzing" })
+        .eq("id", exam.id);
+
+      // Call analyze-image function
+      const { error } = await supabase.functions.invoke("analyze-image", {
+        body: { exam_id: exam.id },
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Re-análise iniciada!" });
+
+      // Reload after 3 seconds
+      setTimeout(() => {
+        fetchExamData();
+      }, 3000);
+    } catch (error) {
+      console.error("Error reanalyzing:", error);
+      toast({ 
+        title: "Erro ao re-analisar", 
+        description: "Tente novamente",
+        variant: "destructive" 
+      });
+    } finally {
+      setIsReanalyzing(false);
+    }
+  };
+
   const examTypeLabels: Record<string, string> = {
     oct_macular: "OCT Macular",
     oct_nerve: "OCT Nervo Óptico",
@@ -354,7 +456,7 @@ export default function ExamViewPage() {
                 variant={exam.status === "approved" ? "default" : "secondary"}
                 className={exam.status === "approved" ? "bg-success" : ""}
               >
-                {exam.status === "approved" ? "Aprovado" : "Pendente"}
+                {exam.status === "approved" ? "Aprovado" : exam.status === "analyzing" ? "Analisando" : "Pendente"}
               </Badge>
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
@@ -452,9 +554,43 @@ export default function ExamViewPage() {
 
           {/* Analysis Section */}
           <div className="lg:col-span-2 space-y-4">
+            {/* Analyzing in Progress Card */}
+            {exam.status === "analyzing" && (
+              <Card className="bg-blue-50 border-blue-200">
+                <CardContent className="py-6">
+                  <div className="flex flex-col items-center text-center gap-3">
+                    <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+                    <div>
+                      <h3 className="font-semibold text-blue-900">Análise em andamento</h3>
+                      <p className="text-sm text-blue-700 mt-1">
+                        A IA está processando a imagem. Isso pode levar até 30 segundos.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Análise da IA</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Análise da IA</CardTitle>
+                  {exam.status !== "approved" && exam.analysis && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleReanalyze}
+                      disabled={isReanalyzing}
+                    >
+                      {isReanalyzing ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                      )}
+                      Re-analisar
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {exam.analysis ? (
@@ -548,6 +684,10 @@ export default function ExamViewPage() {
                       </AccordionItem>
                     )}
                   </Accordion>
+                ) : exam.status === "analyzing" ? (
+                  <div className="text-center py-4 text-muted-foreground">
+                    Aguardando conclusão da análise...
+                  </div>
                 ) : (
                   <div className="text-center py-8">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground mb-4" />
@@ -585,7 +725,7 @@ export default function ExamViewPage() {
                     <Button variant="outline" onClick={handleSaveDraft} disabled={isSaving}>
                       {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar Rascunho"}
                     </Button>
-                    <Button onClick={handleApprove} disabled={isApproving} className="flex-1">
+                    <Button onClick={handleApprove} disabled={isApproving || !exam.analysis} className="flex-1">
                       {isApproving ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       ) : (
@@ -611,8 +751,20 @@ export default function ExamViewPage() {
                       )}
                       Exportar PDF
                     </Button>
-                    <Button variant="outline" className="flex-1">
-                      <Share2 className="h-4 w-4 mr-2" />
+                    <Button 
+                      variant="outline" 
+                      className="flex-1"
+                      onClick={handleShare}
+                      disabled={isSharing}
+                    >
+                      {isSharing ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <>
+                          <Share2 className="h-4 w-4 mr-2" />
+                          <Copy className="h-3 w-3 mr-1" />
+                        </>
+                      )}
                       Compartilhar
                     </Button>
                   </div>
