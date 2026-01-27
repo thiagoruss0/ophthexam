@@ -1,205 +1,156 @@
 
 
-# OphtalAI - Plano de Implementação Completo
+# Plano: Edge Function "analyze-image"
 
-## Visão Geral do Projeto
-Aplicativo web profissional para análise de imagens oftalmológicas (OCT Macular, OCT Nervo Óptico e Retinografia) utilizando inteligência artificial, com geração de laudos estruturados para revisão médica.
-
----
-
-## Fase 1: Fundação e Autenticação
-
-### 1.1 Configuração do Backend (Lovable Cloud + Supabase)
-- Configurar Lovable Cloud para edge functions e storage
-- Criar estrutura do banco de dados com todas as tabelas especificadas:
-  - `profiles` (dados do médico, CRM, status de aprovação)
-  - `user_roles` (admin/médico - tabela separada para segurança)
-  - `patients` (dados dos pacientes)
-  - `exams` (exames cadastrados)
-  - `exam_images` (imagens dos exames)
-  - `ai_analysis` (resultados da análise IA)
-  - `reports` (laudos finalizados)
-  - `exam_comparisons` (comparativos entre exames)
-- Implementar RLS (Row Level Security) para todas as tabelas
-- Configurar Storage bucket para imagens de exames e PDFs
-
-### 1.2 Sistema de Autenticação
-- Página de Login com email/senha
-- Página de Cadastro com campos:
-  - Nome completo, Email, Senha
-  - CRM e UF do CRM (validação de formato)
-  - Especialidade (Oftalmologia/Retina/Glaucoma)
-- Sistema de aprovação (novos cadastros ficam como "pendentes")
-- Recuperação de senha por email
-- Proteção de rotas (apenas médicos aprovados acessam o sistema)
+## Objetivo
+Criar uma Edge Function que analisa imagens oftalmológicas usando Lovable AI (Google Gemini) com os prompts específicos fornecidos para cada tipo de exame.
 
 ---
 
-## Fase 2: Interface Principal
+## Arquitetura da Solução
 
-### 2.1 Landing Page
-- Design profissional médico (paleta azul #0066CC)
-- Header com logo "OphtalAI" e navegação
-- Hero section com proposta de valor
-- Cards de benefícios (3 principais)
-- Seção "Como funciona" (4 passos ilustrados)
-- Seção de tipos de exame suportados
-- Footer com disclaimer médico obrigatório
-- CTAs de Login e Cadastro
-
-### 2.2 Dashboard do Médico
-- Saudação personalizada "Olá, Dr. [Nome]"
-- Cards de métricas:
-  - Total de exames do mês
-  - Laudos pendentes
-  - Laudos finalizados
-  - Gráfico de distribuição por tipo de exame
-- Lista dos últimos 10 exames com:
-  - Thumbnail, paciente, tipo (badges coloridos), olho, data, status
-- Filtros e busca
-- Botão flutuante "Nova Análise"
+```text
++-------------------+      +--------------------+      +------------------+
+|  Frontend (React) | ---> | Edge Function      | ---> | Lovable AI       |
+|  NewAnalysis.tsx  |      | analyze-image      |      | (Gemini Pro)     |
++-------------------+      +--------------------+      +------------------+
+         |                          |                          |
+         |  POST { exam_id }        |  1. Busca exam + images  |
+         |                          |  2. Seleciona prompt     |
+         |                          |  3. Envia para AI        |
+         |                          |  4. Salva em ai_analysis |
+         |                          |  5. Atualiza exam status |
+         |                          |                          |
+         +<---- Redirect -----------+<---- JSON Response ------+
+```
 
 ---
 
-## Fase 3: Fluxo de Análise
+## Implementacao
 
-### 3.1 Wizard de Nova Análise (4 etapas)
-**Etapa 1 - Paciente:**
-- Busca de paciente existente (autocomplete)
-- Formulário de cadastro de novo paciente
+### 1. Criar Edge Function
 
-**Etapa 2 - Exame:**
-- Seleção do tipo de exame com descrições
-- Escolha do olho (OD/OE/Ambos)
-- Data, equipamento, indicação clínica
+**Arquivo:** `supabase/functions/analyze-image/index.ts`
 
-**Etapa 3 - Upload:**
-- Área de drag-and-drop para imagens
-- Suporte a JPG, PNG, TIFF, DICOM (até 20MB)
-- Preview com zoom
-- Upload múltiplo para "Ambos os olhos"
+**Funcionalidades:**
+- Receber `exam_id` no body da requisicao
+- Buscar dados do exame e imagens no Supabase
+- Selecionar o prompt correto baseado no `exam_type`
+- Baixar a imagem e converter para base64
+- Enviar para Lovable AI Gateway com modelo `google/gemini-2.5-pro` (melhor para imagens)
+- Parsear resposta JSON da IA
+- Salvar resultado estruturado na tabela `ai_analysis`
+- Atualizar status do exame para `analyzed`
+- Retornar resultado
 
-**Etapa 4 - Confirmação:**
-- Resumo dos dados
-- Confirmação e início da análise
-- Feedback visual durante processamento
+### 2. Estrutura dos Prompts
 
-### 3.2 Visualização do Exame
-- Layout duas colunas (imagem + laudo)
-- Controles de visualização da imagem (zoom, tela cheia)
-- Laudo IA estruturado em accordions:
-  - Seções específicas por tipo de exame
-  - Biomarcadores detectados (badges)
-  - Medidas e classificações
-  - Impressão diagnóstica
-- Área de edição médica:
-  - Checkboxes para confirmar/remover achados
-  - Campo para observações
-  - Opção de regenerar análise
-- Ações: Salvar rascunho, Aprovar laudo, Exportar PDF, Compartilhar
+Serao armazenados na propria Edge Function:
 
----
+| Tipo de Exame | Prompt | Campos de Saida |
+|---------------|--------|-----------------|
+| `oct_macular` | Analise de camadas retinianas, biomarcadores, medidas | quality, layers, biomarkers, measurements, diagnosis |
+| `oct_nerve` | Analise de RNFL, disco optico, celulas ganglionares | quality, rnfl, optic_disc, ganglion_cell_analysis, biomarkers_glaucoma, risk_classification |
+| `retinography` | Analise de fundo de olho completo | quality, optic_disc, macula, vessels, retina_general, biomarkers, classifications |
 
-## Fase 4: Funcionalidades Avançadas
+### 3. Mapeamento de Campos para ai_analysis
 
-### 4.1 Histórico de Exames
-- Busca avançada por paciente
-- Filtros: período, tipo, status, diagnóstico
-- Tabela com ordenação e paginação
-- Exportação para CSV
+| Campo do Prompt | Coluna ai_analysis |
+|-----------------|-------------------|
+| quality | quality_score |
+| layers/biomarkers | findings (JSON) |
+| biomarcadores especificos | biomarkers (JSON) |
+| rnfl/optic_disc | optic_nerve_analysis (JSON) |
+| macula/vessels/retina_general | retinography_analysis (JSON) |
+| measurements | measurements (JSON) |
+| diagnosis.primary | diagnosis (array) |
+| recommendations | recommendations (array) |
+| risk_classification | risk_classification |
+| resposta completa | raw_response (JSON) |
 
-### 4.2 Perfil do Paciente
-- Dados cadastrais completos
-- Timeline de todos os exames
-- Comparativo lado a lado de exames
-- Gráfico de evolução temporal
+### 4. Atualizar config.toml
 
-### 4.3 Configurações
-- Perfil do médico
-- Dados da clínica (logo, endereço)
-- Personalização do laudo (template, assinatura)
-- Preferências (tema, idioma, notificações)
+Adicionar configuracao da nova funcao com `verify_jwt = false` (validacao feita no codigo).
 
 ---
 
-## Fase 5: Painel Administrativo
+## Fluxo de Execucao
 
-### 5.1 Dashboard Admin
-- Lista de médicos pendentes de aprovação
-- Ações: Aprovar / Rejeitar / Solicitar documentos
-- Lista de todos os médicos cadastrados
-- Gerenciamento de status (ativar/suspender)
-- Estatísticas de uso do sistema
-
----
-
-## Fase 6: Edge Functions
-
-### 6.1 analyze-image
-- Recebe exame e imagem
-- Integração com Lovable AI (Google Gemini)
-- Utiliza seus prompts específicos por tipo de exame
-- Retorna análise estruturada em JSON
-- Salva resultado em `ai_analysis`
-
-### 6.2 generate-pdf
-- Gera PDF profissional com:
-  - Cabeçalho com logo da clínica
-  - Dados do paciente e exame
-  - Imagem do exame
-  - Laudo completo estruturado
-  - Assinatura digital do médico
-  - Disclaimer obrigatório
-- Upload automático para Storage
-
-### 6.3 share-report
-- Gera token único de compartilhamento
-- Define expiração (padrão 7 dias)
-- Retorna link público temporário
+1. **Receber requisicao** com `exam_id`
+2. **Validar autenticacao** via header Authorization
+3. **Buscar exame** no banco de dados
+4. **Buscar imagens** associadas ao exame
+5. **Baixar primeira imagem** e converter para base64
+6. **Selecionar prompt** baseado no `exam_type`
+7. **Chamar Lovable AI** com imagem + prompt
+8. **Parsear resposta** JSON
+9. **Mapear campos** para estrutura do banco
+10. **Inserir em ai_analysis**
+11. **Atualizar exame** para status `analyzed`
+12. **Retornar sucesso** com ID da analise
 
 ---
 
-## Elementos de Design
+## Tratamento de Erros
 
-### Paleta de Cores
-- Primary: #0066CC (azul médico)
-- Success/Normal: #00AA88 (verde)
-- Warning/Borderline: #FF9900 (laranja)
-- Danger/Anormal: #CC3333 (vermelho)
-- Background: #F8FAFC
-
-### Componentes UI
-- Cards com sombra suave
-- Badges coloridos para classificações
-- Accordions para seções do laudo
-- Tooltips explicativos
-- Skeletons durante carregamento
-- Toasts para feedback
-- Modais de confirmação
-
-### Responsividade
-- Desktop: layout completo duas colunas
-- Tablet: colunas empilhadas
-- Mobile: funcional mas otimizado para tablet+
+- **Exame nao encontrado**: Retorna 404
+- **Sem imagens**: Retorna 400
+- **Erro na IA**: Retorna 500 com mensagem
+- **JSON invalido da IA**: Tenta extrair dados parciais
+- **Rate limit (429)**: Informa usuario para tentar novamente
+- **Creditos esgotados (402)**: Informa sobre necessidade de creditos
 
 ---
 
-## Segurança e Compliance
+## Seguranca
 
-- Autenticação robusta com Supabase Auth
-- RLS em todas as tabelas
-- Tabela separada para roles (prevenção de escalação de privilégios)
-- Criptografia de dados sensíveis (CPF)
-- Links de compartilhamento com expiração
-- Disclaimer médico em todas as telas de laudo
-- Log de auditoria para ações críticas
+- Validacao de JWT via `getClaims()`
+- Verificacao de que o usuario tem acesso ao exame
+- CORS headers configurados
+- Logs para auditoria
 
 ---
 
-## Próximos Passos Após Implementação
+## Detalhes Tecnicos
 
-Quando clicar em "Implementar plano", vou precisar que você:
-1. **Compartilhe os prompts** para cada tipo de exame (OCT Macular, OCT Nervo Óptico, Retinografia)
-2. **Forneça o logo** do OphtalAI se você tiver um pronto
-3. **Confirme** se há algum template específico de laudo que você usa atualmente
+### Modelo de IA
+- **Modelo:** `google/gemini-2.5-pro` (melhor para analise de imagens medicas)
+- **Gateway:** `https://ai.gateway.lovable.dev/v1/chat/completions`
+- **API Key:** `LOVABLE_API_KEY` (ja configurada automaticamente)
+
+### Formato da Requisicao para IA
+```json
+{
+  "model": "google/gemini-2.5-pro",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "<PROMPT_ESPECIFICO>" },
+        { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,..." } }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Arquivos a Criar/Modificar
+
+1. **Criar:** `supabase/functions/analyze-image/index.ts`
+   - Edge Function completa com prompts e logica
+
+2. **Modificar:** `supabase/config.toml`
+   - Adicionar configuracao da funcao analyze-image
+
+---
+
+## Estimativa
+
+A implementacao inclui:
+- Edge Function com aproximadamente 400 linhas
+- Os 3 prompts completos fornecidos
+- Logica de tratamento de erros robusta
+- Logging detalhado para debug
 
