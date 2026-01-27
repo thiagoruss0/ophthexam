@@ -1,4 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { LayerItem } from "./LayerItem";
@@ -6,6 +5,8 @@ import { BiomarkersDisplay } from "./BiomarkersDisplay";
 import { MeasurementsTable } from "./MeasurementsTable";
 import { eyeLabels, getQualityInfo } from "./analysisLabels";
 import { Check, AlertCircle, Eye } from "lucide-react";
+import { SingleEyeOctMacularDisplay } from "./SingleEyeOctMacularDisplay";
+import { BilateralOctMacularDisplay } from "./BilateralOctMacularDisplay";
 
 interface OctMacularDisplayProps {
   analysis: {
@@ -22,61 +23,22 @@ interface OctMacularDisplayProps {
 
 export function OctMacularDisplay({ analysis, eye }: OctMacularDisplayProps) {
   const findings = analysis.findings || {};
+  const biomarkers = analysis.biomarkers || {};
+  const measurements = analysis.measurements || {};
+  
+  // Check if bilateral analysis
+  const isBilateral = findings.bilateral === true && (findings.od || findings.oe);
+  const isBilateralMeasurements = measurements.bilateral === true;
+  const isBilateralBiomarkers = biomarkers.bilateral === true;
+  
+  if (isBilateral || isBilateralMeasurements) {
+    return <BilateralOctMacularDisplay analysis={analysis} />;
+  }
+  
+  // Single eye display
   const qualityInfo = analysis.quality_score 
     ? getQualityInfo(analysis.quality_score) 
     : null;
-  
-  // Extract layer groups from findings
-  const vitreoretinalInterface = findings.vitreoretinal_interface || findings.interface_vitreorretiniana || findings.mli;
-  const retinalSurface = findings.retinal_surface || findings.superficie_retiniana;
-  const innerLayers = findings.inner_layers || findings.camadas_internas;
-  const outerLayers = findings.outer_layers || findings.camadas_externas;
-  const rpeComplex = findings.rpe_choroid_complex || findings.complexo_epr || findings.epr;
-  const choroid = findings.choroid || findings.coroide;
-  const fovealDepression = findings.foveal_depression || findings.depressao_foveal;
-  const clinicalNotes = findings.clinical_notes || findings.notas_clinicas;
-  
-  // Handle both structured and flat layer data
-  const renderLayers = (layers: any, groupName: string) => {
-    if (!layers) return null;
-    
-    if (typeof layers === "string") {
-      return (
-        <div className="bg-muted/30 rounded-lg p-3">
-          <h5 className="font-medium text-sm mb-2">{groupName}</h5>
-          <p className="text-sm text-muted-foreground">{layers}</p>
-        </div>
-      );
-    }
-    
-    if (typeof layers === "object" && !Array.isArray(layers)) {
-      const entries = Object.entries(layers).filter(([key]) => !key.startsWith("_"));
-      if (entries.length === 0) return null;
-      
-      // Check if it's a single layer with status/description
-      if (layers.status || layers.description) {
-        return (
-          <div className="bg-muted/30 rounded-lg p-3">
-            <h5 className="font-medium text-sm mb-2">{groupName}</h5>
-            <LayerItem layerKey={groupName} data={layers} />
-          </div>
-        );
-      }
-      
-      return (
-        <div className="bg-muted/30 rounded-lg p-3">
-          <h5 className="font-medium text-sm mb-2">{groupName}</h5>
-          <div className="space-y-1">
-            {entries.map(([key, value]) => (
-              <LayerItem key={key} layerKey={key} data={value as any} />
-            ))}
-          </div>
-        </div>
-      );
-    }
-    
-    return null;
-  };
   
   return (
     <div className="space-y-4">
@@ -95,71 +57,14 @@ export function OctMacularDisplay({ analysis, eye }: OctMacularDisplayProps) {
       
       <Separator />
       
-      {/* Vitreoretinal Interface */}
-      {vitreoretinalInterface && renderLayers(vitreoretinalInterface, "Interface Vitreorretiniana")}
-      
-      {/* Retinal Surface */}
-      {retinalSurface && renderLayers(retinalSurface, "Superfície Retiniana")}
-      
-      {/* Foveal Depression */}
-      {fovealDepression && (
-        <div className="bg-muted/30 rounded-lg p-3">
-          <h5 className="font-medium text-sm mb-2">Depressão Foveal</h5>
-          {typeof fovealDepression === "string" ? (
-            <p className="text-sm text-muted-foreground">{fovealDepression}</p>
-          ) : (
-            <LayerItem layerKey="foveal_depression" data={fovealDepression} />
-          )}
-        </div>
-      )}
-      
-      {/* Inner Retinal Layers */}
-      {innerLayers && renderLayers(innerLayers, "Camadas Retinianas Internas")}
-      
-      {/* Outer Retinal Layers */}
-      {outerLayers && renderLayers(outerLayers, "Camadas Retinianas Externas")}
-      
-      {/* RPE-Choroid Complex */}
-      {rpeComplex && renderLayers(rpeComplex, "Complexo EPR-Coriocapilar")}
-      
-      {/* Choroid */}
-      {choroid && renderLayers(choroid, "Coroide")}
-      
-      {/* Generic layers if no structured data */}
-      {findings.layers && !innerLayers && !outerLayers && (
-        <div className="bg-muted/30 rounded-lg p-3">
-          <h5 className="font-medium text-sm mb-2">Camadas Retinianas</h5>
-          {typeof findings.layers === "string" ? (
-            <p className="text-sm text-muted-foreground">{findings.layers}</p>
-          ) : (
-            <div className="space-y-1">
-              {Object.entries(findings.layers).map(([key, value]) => (
-                <LayerItem key={key} layerKey={key} data={value as any} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      
-      <Separator />
-      
-      {/* Measurements */}
-      <MeasurementsTable measurements={analysis.measurements} />
-      
-      {/* Biomarkers */}
-      <BiomarkersDisplay biomarkers={analysis.biomarkers} />
-      
-      {/* Clinical Notes */}
-      {clinicalNotes && (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-            Notas Clínicas
-          </h4>
-          <div className="bg-muted/30 rounded-lg p-3">
-            <p className="text-sm whitespace-pre-wrap">{clinicalNotes}</p>
-          </div>
-        </div>
-      )}
+      <SingleEyeOctMacularDisplay
+        findings={findings}
+        biomarkers={analysis.biomarkers}
+        measurements={analysis.measurements}
+        qualityScore={analysis.quality_score}
+        eye={eye}
+        showHeader={false}
+      />
       
       <Separator />
       

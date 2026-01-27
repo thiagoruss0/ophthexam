@@ -1,11 +1,11 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BiomarkersDisplay } from "./BiomarkersDisplay";
 import { eyeLabels, getQualityInfo, getStatusInfo } from "./analysisLabels";
-import { Check, AlertCircle, Eye, Circle } from "lucide-react";
+import { Check, AlertCircle, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BilateralOctNerveDisplay } from "./BilateralOctNerveDisplay";
 
 interface OctNerveDisplayProps {
   analysis: {
@@ -24,6 +24,14 @@ interface OctNerveDisplayProps {
 export function OctNerveDisplay({ analysis, eye }: OctNerveDisplayProps) {
   const findings = analysis.findings || {};
   const nerveAnalysis = analysis.optic_nerve_analysis || findings.optic_nerve || {};
+  
+  // Check if bilateral analysis
+  const isBilateral = nerveAnalysis.bilateral === true || findings.bilateral === true;
+  
+  if (isBilateral && (nerveAnalysis.od || nerveAnalysis.oe)) {
+    return <BilateralOctNerveDisplay analysis={analysis} />;
+  }
+  
   const qualityInfo = analysis.quality_score 
     ? getQualityInfo(analysis.quality_score) 
     : null;
