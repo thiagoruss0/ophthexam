@@ -8,13 +8,143 @@ const corsHeaders = {
 
 // ============= PROMPTS POR TIPO DE EXAME =============
 
+// Prompt for bilateral OCT Macular analysis
+const OCT_MACULAR_BILATERAL_PROMPT = `Você é um sistema especializado em análise de imagens de OCT (Tomografia de Coerência Óptica) Macular. Analise as imagens fornecidas de AMBOS OS OLHOS com precisão técnica e retorne os achados em formato JSON estruturado, separando os achados de cada olho.
+
+## INSTRUÇÕES
+1. Identifique qual imagem corresponde ao Olho Direito (OD) e qual ao Olho Esquerdo (OE)
+2. Avalie a qualidade técnica de cada imagem
+3. Analise sistematicamente cada camada retiniana DE CADA OLHO
+4. Identifique todos os biomarcadores presentes EM CADA OLHO
+5. OBRIGATÓRIO: Meça ou estime a ESPESSURA FOVEAL CENTRAL de cada olho
+6. Compare os achados entre os olhos
+7. Formule impressão diagnóstica bilateral
+8. Sugira recomendações clínicas
+
+## ANÁLISE REQUERIDA
+
+Retorne APENAS um JSON válido com a seguinte estrutura BILATERAL:
+
+{
+  "bilateral": true,
+  "od": {
+    "quality": {
+      "score": "boa|moderada|ruim",
+      "issues": ["lista de problemas se houver"],
+      "centered": true|false
+    },
+    "layers": {
+      "vitreoretinal_interface": {"status": "normal|alterada", "description": ""},
+      "mli": {"status": "normal|alterada|ausente", "description": ""},
+      "cfnr": {"status": "normal|alterada|ausente", "description": ""},
+      "ccg": {"status": "normal|alterada|ausente", "description": ""},
+      "cpi": {"status": "normal|alterada|ausente", "description": ""},
+      "cni": {"status": "normal|alterada|ausente", "description": ""},
+      "cpe": {"status": "normal|alterada|ausente", "description": ""},
+      "cne": {"status": "normal|alterada|ausente", "description": ""},
+      "zona_elipsoide": {"status": "normal|alterada|ausente", "description": ""},
+      "epr": {"status": "normal|alterado|ausente", "description": ""},
+      "membrana_bruch": {"status": "normal|alterada|ausente", "description": ""},
+      "coroide": {"status": "normal|alterada", "description": ""}
+    },
+    "foveal_depression": {"status": "preservada|alterada|ausente", "description": ""},
+    "biomarkers": {
+      "fluido_intraretiniano": {"present": true|false, "location": "", "severity": "leve|moderado|severo"},
+      "fluido_subretiniano": {"present": true|false, "location": "", "severity": "leve|moderado|severo"},
+      "dep": {"present": true|false, "type": "seroso|fibrovascular|drusenoide", "height": ""},
+      "drusas": {"present": true|false, "size": "pequenas|medias|grandes", "type": "duras|moles", "location": ""},
+      "atrofia_epr": {"present": true|false, "location": "", "extent": ""},
+      "membrana_epirretiniana": {"present": true|false, "severity": "leve|moderada|severa", "traction": true|false},
+      "tracao_vitreomacular": {"present": true|false, "type": "adesao|tracao", "width": ""},
+      "buraco_macular": {"present": true|false, "stage": "1|2|3|4", "size": ""},
+      "edema_macular": {"present": true|false, "type": "cistoide|difuso", "severity": "leve|moderado|severo"},
+      "material_hiperreflectivo": {"present": true|false, "location": "sub_epr|subretiniano|intraretiniano"},
+      "pontos_hiperreflectivos": {"present": true|false, "quantity": "poucos|moderados|muitos"},
+      "atrofia_externa": {"present": true|false, "location": ""},
+      "desorganizacao_camadas": {"present": true|false, "location": ""}
+    },
+    "measurements": {
+      "central_foveal_thickness": {"value": null, "unit": "μm", "classification": "normal|aumentada|diminuida"},
+      "subfoveal_choroidal_thickness": {"value": null, "unit": "μm"},
+      "subretinal_fluid_height": {"value": null, "unit": "μm"},
+      "dep_height": {"value": null, "unit": "μm"}
+    },
+    "clinical_notes": ""
+  },
+  "oe": {
+    "quality": {
+      "score": "boa|moderada|ruim",
+      "issues": ["lista de problemas se houver"],
+      "centered": true|false
+    },
+    "layers": {
+      "vitreoretinal_interface": {"status": "normal|alterada", "description": ""},
+      "mli": {"status": "normal|alterada|ausente", "description": ""},
+      "cfnr": {"status": "normal|alterada|ausente", "description": ""},
+      "ccg": {"status": "normal|alterada|ausente", "description": ""},
+      "cpi": {"status": "normal|alterada|ausente", "description": ""},
+      "cni": {"status": "normal|alterada|ausente", "description": ""},
+      "cpe": {"status": "normal|alterada|ausente", "description": ""},
+      "cne": {"status": "normal|alterada|ausente", "description": ""},
+      "zona_elipsoide": {"status": "normal|alterada|ausente", "description": ""},
+      "epr": {"status": "normal|alterado|ausente", "description": ""},
+      "membrana_bruch": {"status": "normal|alterada|ausente", "description": ""},
+      "coroide": {"status": "normal|alterada", "description": ""}
+    },
+    "foveal_depression": {"status": "preservada|alterada|ausente", "description": ""},
+    "biomarkers": {
+      "fluido_intraretiniano": {"present": true|false, "location": "", "severity": "leve|moderado|severo"},
+      "fluido_subretiniano": {"present": true|false, "location": "", "severity": "leve|moderado|severo"},
+      "dep": {"present": true|false, "type": "seroso|fibrovascular|drusenoide", "height": ""},
+      "drusas": {"present": true|false, "size": "pequenas|medias|grandes", "type": "duras|moles", "location": ""},
+      "atrofia_epr": {"present": true|false, "location": "", "extent": ""},
+      "membrana_epirretiniana": {"present": true|false, "severity": "leve|moderada|severa", "traction": true|false},
+      "tracao_vitreomacular": {"present": true|false, "type": "adesao|tracao", "width": ""},
+      "buraco_macular": {"present": true|false, "stage": "1|2|3|4", "size": ""},
+      "edema_macular": {"present": true|false, "type": "cistoide|difuso", "severity": "leve|moderado|severo"},
+      "material_hiperreflectivo": {"present": true|false, "location": "sub_epr|subretiniano|intraretiniano"},
+      "pontos_hiperreflectivos": {"present": true|false, "quantity": "poucos|moderados|muitos"},
+      "atrofia_externa": {"present": true|false, "location": ""},
+      "desorganizacao_camadas": {"present": true|false, "location": ""}
+    },
+    "measurements": {
+      "central_foveal_thickness": {"value": null, "unit": "μm", "classification": "normal|aumentada|diminuida"},
+      "subfoveal_choroidal_thickness": {"value": null, "unit": "μm"},
+      "subretinal_fluid_height": {"value": null, "unit": "μm"},
+      "dep_height": {"value": null, "unit": "μm"}
+    },
+    "clinical_notes": ""
+  },
+  "comparison": {
+    "symmetry": "simetrico|assimetrico",
+    "asymmetry_details": "",
+    "notes": ""
+  },
+  "diagnosis": {
+    "primary": "",
+    "secondary": [""],
+    "differential": [""]
+  },
+  "recommendations": [""],
+  "overall_clinical_notes": ""
+}
+
+IMPORTANTE:
+- Seja preciso e objetivo
+- Use terminologia médica oftalmológica padrão
+- A ESPESSURA FOVEAL CENTRAL é OBRIGATÓRIA para cada olho
+- Compare sempre os achados entre OD e OE
+- Se não conseguir avaliar algo, indique "não avaliável"
+- Não invente achados - relate apenas o que é visível
+- Este é um auxílio diagnóstico que requer validação médica`;
+
 const OCT_MACULAR_PROMPT = `Você é um sistema especializado em análise de imagens de OCT (Tomografia de Coerência Óptica) Macular. Analise a imagem fornecida com precisão técnica e retorne os achados em formato JSON estruturado.
 
 ## INSTRUÇÕES
 1. Avalie a qualidade técnica da imagem
 2. Analise sistematicamente cada camada retiniana
 3. Identifique todos os biomarcadores presentes
-4. Estime medidas quando visíveis
+4. OBRIGATÓRIO: Meça ou estime a ESPESSURA FOVEAL CENTRAL
 5. Formule impressão diagnóstica baseada nos achados
 6. Sugira recomendações clínicas
 
@@ -29,6 +159,7 @@ Retorne APENAS um JSON válido com a seguinte estrutura:
     "centered": true|false
   },
   "layers": {
+    "vitreoretinal_interface": {"status": "normal|alterada", "description": "Linha de média refletividade aderida à superfície retiniana"},
     "mli": {"status": "normal|alterada|ausente", "description": ""},
     "cfnr": {"status": "normal|alterada|ausente", "description": ""},
     "ccg": {"status": "normal|alterada|ausente", "description": ""},
@@ -41,6 +172,11 @@ Retorne APENAS um JSON válido com a seguinte estrutura:
     "membrana_bruch": {"status": "normal|alterada|ausente", "description": ""},
     "coroide": {"status": "normal|alterada", "description": ""}
   },
+  "foveal_depression": {"status": "preservada|alterada|ausente", "description": ""},
+  "retinal_surface": {"status": "normal|alterada", "description": "Refletividade normal"},
+  "inner_layers": {"status": "normal|alteradas", "description": "Refletividade normal e arquitetura preservada"},
+  "outer_layers": {"status": "normal|alteradas", "description": "Refletividade normal e arquitetura preservada"},
+  "rpe_choroid_complex": {"status": "normal|alterado", "description": "Refletividade normal e arquitetura preservada"},
   "biomarkers": {
     "fluido_intraretiniano": {"present": true|false, "location": "", "severity": "leve|moderado|severo"},
     "fluido_subretiniano": {"present": true|false, "location": "", "severity": "leve|moderado|severo"},
@@ -74,8 +210,120 @@ Retorne APENAS um JSON válido com a seguinte estrutura:
 IMPORTANTE:
 - Seja preciso e objetivo
 - Use terminologia médica oftalmológica padrão
+- A ESPESSURA FOVEAL CENTRAL é OBRIGATÓRIA
 - Se não conseguir avaliar algo, indique "não avaliável"
 - Não invente achados - relate apenas o que é visível
+- Este é um auxílio diagnóstico que requer validação médica`;
+
+const OCT_NERVE_BILATERAL_PROMPT = `Você é um sistema especializado em análise de OCT de Nervo Óptico (RNFL e Disco Óptico). Analise as imagens de AMBOS OS OLHOS com foco em detecção de sinais de glaucoma e neuropatias ópticas. Retorne os achados em formato JSON estruturado separando cada olho.
+
+## INSTRUÇÕES
+1. Identifique qual imagem corresponde ao Olho Direito (OD) e qual ao Olho Esquerdo (OE)
+2. Avalie a qualidade técnica de cada imagem
+3. Analise a espessura da RNFL por setores DE CADA OLHO
+4. Avalie os parâmetros do disco óptico DE CADA OLHO
+5. Identifique biomarcadores de glaucoma EM CADA OLHO
+6. Compare a simetria entre os olhos
+7. Classifique o risco glaucomatoso
+8. Formule impressão diagnóstica bilateral
+
+## ANÁLISE REQUERIDA
+
+Retorne APENAS um JSON válido com a seguinte estrutura BILATERAL:
+
+{
+  "bilateral": true,
+  "od": {
+    "quality": {
+      "score": "boa|moderada|ruim",
+      "signal_strength": null,
+      "issues": []
+    },
+    "rnfl": {
+      "average": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "superior": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "inferior": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "nasal": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "temporal": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "thinning_location": [],
+      "defect_pattern": "difuso|localizado|cunha|nenhum"
+    },
+    "optic_disc": {
+      "disc_area": {"value": null, "unit": "mm²", "classification": "pequeno|normal|grande"},
+      "cup_area": {"value": null, "unit": "mm²"},
+      "rim_area": {"value": null, "unit": "mm²", "classification": "normal|reduzida"},
+      "cd_ratio_average": {"value": null, "classification": "normal|suspeita|glaucomatosa"},
+      "isnt_rule": {"preserved": true|false, "violated_sectors": []},
+      "notch": {"present": true|false, "location": ""},
+      "disc_hemorrhage": {"present": true|false, "location": ""},
+      "peripapillary_atrophy": {"present": true|false, "type": "alfa|beta", "extent": ""}
+    },
+    "biomarkers_glaucoma": {
+      "rnfl_wedge_defect": {"present": true|false, "location": ""},
+      "rnfl_focal_thinning": {"present": true|false, "location": ""},
+      "rim_thinning": {"present": true|false, "location": ""},
+      "rim_notch": {"present": true|false, "location": ""},
+      "disc_hemorrhage": {"present": true|false, "location": ""}
+    },
+    "clinical_notes": ""
+  },
+  "oe": {
+    "quality": {
+      "score": "boa|moderada|ruim",
+      "signal_strength": null,
+      "issues": []
+    },
+    "rnfl": {
+      "average": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "superior": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "inferior": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "nasal": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "temporal": {"value": null, "unit": "μm", "classification": "normal|borderline|anormal"},
+      "thinning_location": [],
+      "defect_pattern": "difuso|localizado|cunha|nenhum"
+    },
+    "optic_disc": {
+      "disc_area": {"value": null, "unit": "mm²", "classification": "pequeno|normal|grande"},
+      "cup_area": {"value": null, "unit": "mm²"},
+      "rim_area": {"value": null, "unit": "mm²", "classification": "normal|reduzida"},
+      "cd_ratio_average": {"value": null, "classification": "normal|suspeita|glaucomatosa"},
+      "isnt_rule": {"preserved": true|false, "violated_sectors": []},
+      "notch": {"present": true|false, "location": ""},
+      "disc_hemorrhage": {"present": true|false, "location": ""},
+      "peripapillary_atrophy": {"present": true|false, "type": "alfa|beta", "extent": ""}
+    },
+    "biomarkers_glaucoma": {
+      "rnfl_wedge_defect": {"present": true|false, "location": ""},
+      "rnfl_focal_thinning": {"present": true|false, "location": ""},
+      "rim_thinning": {"present": true|false, "location": ""},
+      "rim_notch": {"present": true|false, "location": ""},
+      "disc_hemorrhage": {"present": true|false, "location": ""}
+    },
+    "clinical_notes": ""
+  },
+  "comparison": {
+    "od_oe_asymmetry": {"significant": true|false, "description": ""},
+    "rnfl_asymmetry_percentage": null,
+    "symmetry": "simetrico|assimetrico"
+  },
+  "risk_classification": {
+    "glaucoma_risk": "baixo|moderado|alto",
+    "progression_risk": "baixo|moderado|alto",
+    "justification": ""
+  },
+  "diagnosis": {
+    "primary": "",
+    "staging": "suspeito|inicial|moderado|avancado",
+    "differential": [""]
+  },
+  "recommendations": [""],
+  "overall_clinical_notes": ""
+}
+
+IMPORTANTE:
+- Compare SEMPRE a simetria entre os dois olhos
+- Avalie a regra ISNT de cada olho
+- Indique necessidade de exames complementares
 - Este é um auxílio diagnóstico que requer validação médica`;
 
 const OCT_NERVE_PROMPT = `Você é um sistema especializado em análise de OCT de Nervo Óptico (RNFL e Disco Óptico). Analise a imagem fornecida com foco em detecção de sinais de glaucoma e neuropatias ópticas. Retorne os achados em formato JSON estruturado.
@@ -161,6 +409,127 @@ IMPORTANTE:
 - Avalie a regra ISNT (Inferior > Superior > Nasal > Temporal)
 - Compare assimetrias entre olhos se possível
 - Indique necessidade de exames complementares (campo visual, PIO, paquimetria)
+- Este é um auxílio diagnóstico que requer validação médica`;
+
+const RETINOGRAPHY_BILATERAL_PROMPT = `Você é um sistema especializado em análise de Retinografia Colorida (fotografia de fundo de olho). Analise as imagens de AMBOS OS OLHOS de forma sistemática, avaliando disco óptico, mácula, vasos e retina periférica. Retorne os achados em formato JSON estruturado separando cada olho.
+
+## INSTRUÇÕES
+1. Identifique qual imagem corresponde ao Olho Direito (OD) e qual ao Olho Esquerdo (OE)
+2. Avalie a qualidade técnica de cada imagem
+3. Analise detalhadamente o disco óptico de cada olho
+4. Avalie a mácula de cada olho
+5. Analise os vasos retinianos de cada olho
+6. Compare achados entre os olhos
+7. Formule impressão diagnóstica bilateral
+
+## ANÁLISE REQUERIDA
+
+Retorne APENAS um JSON válido com a seguinte estrutura BILATERAL:
+
+{
+  "bilateral": true,
+  "od": {
+    "quality": {
+      "score": "boa|moderada|ruim",
+      "focus": "adequado|inadequado",
+      "illumination": "adequada|inadequada"
+    },
+    "optic_disc": {
+      "visibility": "boa|moderada|ruim",
+      "color": "normocorado|palido|hiperemiado",
+      "borders": "nitidas|borradas|elevadas",
+      "cd_ratio_estimated": {"value": null, "confidence": "alta|media|baixa"},
+      "isnt_rule": {"preserved": true|false},
+      "notch": {"present": true|false, "location": ""},
+      "disc_hemorrhage": {"present": true|false, "location": ""},
+      "peripapillary_atrophy": {"present": true|false, "type": "alfa|beta", "extent": ""},
+      "glaucoma_probability": "baixa|moderada|alta"
+    },
+    "macula": {
+      "foveal_reflex": "presente|ausente|alterado",
+      "pigmentation": "normal|alterada",
+      "drusas": {"present": true|false, "size": "", "type": ""},
+      "hemorrhages": {"present": true|false, "type": "", "location": ""},
+      "edema_signs": {"present": true|false, "description": ""},
+      "atrophy": {"present": true|false, "type": "", "extent": ""}
+    },
+    "vessels": {
+      "av_ratio": {"value": "", "classification": "normal|reduzida"},
+      "arteriolar_narrowing": {"present": true|false},
+      "av_nicking": {"present": true|false},
+      "microaneurysms": {"present": true|false, "quantity": ""}
+    },
+    "retina_general": {
+      "hemorrhages": {"present": true|false, "types": [], "quantity": ""},
+      "hard_exudates": {"present": true|false},
+      "cotton_wool_spots": {"present": true|false, "quantity": 0}
+    },
+    "clinical_notes": ""
+  },
+  "oe": {
+    "quality": {
+      "score": "boa|moderada|ruim",
+      "focus": "adequado|inadequado",
+      "illumination": "adequada|inadequada"
+    },
+    "optic_disc": {
+      "visibility": "boa|moderada|ruim",
+      "color": "normocorado|palido|hiperemiado",
+      "borders": "nitidas|borradas|elevadas",
+      "cd_ratio_estimated": {"value": null, "confidence": "alta|media|baixa"},
+      "isnt_rule": {"preserved": true|false},
+      "notch": {"present": true|false, "location": ""},
+      "disc_hemorrhage": {"present": true|false, "location": ""},
+      "peripapillary_atrophy": {"present": true|false, "type": "alfa|beta", "extent": ""},
+      "glaucoma_probability": "baixa|moderada|alta"
+    },
+    "macula": {
+      "foveal_reflex": "presente|ausente|alterado",
+      "pigmentation": "normal|alterada",
+      "drusas": {"present": true|false, "size": "", "type": ""},
+      "hemorrhages": {"present": true|false, "type": "", "location": ""},
+      "edema_signs": {"present": true|false, "description": ""},
+      "atrophy": {"present": true|false, "type": "", "extent": ""}
+    },
+    "vessels": {
+      "av_ratio": {"value": "", "classification": "normal|reduzida"},
+      "arteriolar_narrowing": {"present": true|false},
+      "av_nicking": {"present": true|false},
+      "microaneurysms": {"present": true|false, "quantity": ""}
+    },
+    "retina_general": {
+      "hemorrhages": {"present": true|false, "types": [], "quantity": ""},
+      "hard_exudates": {"present": true|false},
+      "cotton_wool_spots": {"present": true|false, "quantity": 0}
+    },
+    "clinical_notes": ""
+  },
+  "comparison": {
+    "symmetry": "simetrico|assimetrico",
+    "asymmetry_details": "",
+    "notes": ""
+  },
+  "classifications": {
+    "diabetic_retinopathy": "ausente|rdnp_leve|rdnp_moderada|rdnp_severa|rdp",
+    "hypertensive_retinopathy": "ausente|grau1|grau2|grau3|grau4",
+    "amd": "ausente|precoce|intermediaria|avancada_seca|avancada_exsudativa",
+    "glaucoma_suspect": "nao|baixa_probabilidade|moderada_probabilidade|alta_probabilidade"
+  },
+  "diagnosis": {
+    "primary": "",
+    "secondary": [""],
+    "differential": [""]
+  },
+  "recommendations": [""],
+  "urgency": "rotina|preferencial|urgente",
+  "overall_clinical_notes": ""
+}
+
+IMPORTANTE:
+- Compare SEMPRE os achados entre os dois olhos
+- Analise o disco óptico com atenção para sinais de glaucoma
+- Estime o C/D ratio de cada olho
+- Classifique a gravidade das alterações
 - Este é um auxílio diagnóstico que requer validação médica`;
 
 const RETINOGRAPHY_PROMPT = `Você é um sistema especializado em análise de Retinografia Colorida (fotografia de fundo de olho). Analise a imagem fornecida de forma sistemática, avaliando disco óptico, mácula, vasos e retina periférica. Retorne os achados em formato JSON estruturado.
@@ -311,16 +680,29 @@ IMPORTANTE:
 
 // ============= FUNÇÕES AUXILIARES =============
 
-function getPromptForExamType(examType: string): string {
-  switch (examType) {
-    case 'oct_macular':
-      return OCT_MACULAR_PROMPT;
-    case 'oct_nerve':
-      return OCT_NERVE_PROMPT;
-    case 'retinography':
-      return RETINOGRAPHY_PROMPT;
-    default:
-      throw new Error(`Tipo de exame não suportado: ${examType}`);
+function getPromptForExamType(examType: string, isBilateral: boolean): string {
+  if (isBilateral) {
+    switch (examType) {
+      case 'oct_macular':
+        return OCT_MACULAR_BILATERAL_PROMPT;
+      case 'oct_nerve':
+        return OCT_NERVE_BILATERAL_PROMPT;
+      case 'retinography':
+        return RETINOGRAPHY_BILATERAL_PROMPT;
+      default:
+        throw new Error(`Tipo de exame não suportado: ${examType}`);
+    }
+  } else {
+    switch (examType) {
+      case 'oct_macular':
+        return OCT_MACULAR_PROMPT;
+      case 'oct_nerve':
+        return OCT_NERVE_PROMPT;
+      case 'retinography':
+        return RETINOGRAPHY_PROMPT;
+      default:
+        throw new Error(`Tipo de exame não suportado: ${examType}`);
+    }
   }
 }
 
@@ -341,7 +723,7 @@ function extractJsonFromResponse(text: string): any {
   throw new Error('Não foi possível extrair JSON válido da resposta da IA');
 }
 
-function mapResponseToAnalysis(examType: string, response: any): {
+function mapResponseToAnalysis(examType: string, response: any, isBilateral: boolean): {
   quality_score: string | null;
   findings: any;
   biomarkers: any;
@@ -353,7 +735,7 @@ function mapResponseToAnalysis(examType: string, response: any): {
   risk_classification: string | null;
 } {
   const result = {
-    quality_score: response.quality?.score || null,
+    quality_score: null as string | null,
     findings: null as any,
     biomarkers: null as any,
     optic_nerve_analysis: null as any,
@@ -372,45 +754,157 @@ function mapResponseToAnalysis(examType: string, response: any): {
     result.diagnosis = result.diagnosis.concat(response.diagnosis.secondary.filter((d: string) => d));
   }
 
-  switch (examType) {
-    case 'oct_macular':
-      result.findings = {
-        layers: response.layers,
-        clinical_notes: response.clinical_notes,
-      };
-      result.biomarkers = response.biomarkers;
-      result.measurements = response.measurements;
-      break;
+  // Handle bilateral responses
+  if (isBilateral && response.bilateral) {
+    // Quality score - use average or worse of both
+    const odQuality = response.od?.quality?.score;
+    const oeQuality = response.oe?.quality?.score;
+    const qualityOrder = ['boa', 'moderada', 'ruim'];
+    const odIndex = qualityOrder.indexOf(odQuality || 'boa');
+    const oeIndex = qualityOrder.indexOf(oeQuality || 'boa');
+    result.quality_score = qualityOrder[Math.max(odIndex, oeIndex)] || null;
 
-    case 'oct_nerve':
-      result.optic_nerve_analysis = {
-        rnfl: response.rnfl,
-        optic_disc: response.optic_disc,
-        ganglion_cell_analysis: response.ganglion_cell_analysis,
-        comparison: response.comparison,
-      };
-      result.biomarkers = response.biomarkers_glaucoma;
-      result.risk_classification = response.risk_classification?.glaucoma_risk || null;
-      result.findings = {
-        staging: response.diagnosis?.staging,
-        clinical_notes: response.clinical_notes,
-      };
-      break;
+    switch (examType) {
+      case 'oct_macular':
+        result.findings = {
+          bilateral: true,
+          od: {
+            layers: response.od?.layers,
+            foveal_depression: response.od?.foveal_depression,
+            retinal_surface: response.od?.retinal_surface,
+            inner_layers: response.od?.inner_layers,
+            outer_layers: response.od?.outer_layers,
+            rpe_choroid_complex: response.od?.rpe_choroid_complex,
+            clinical_notes: response.od?.clinical_notes,
+          },
+          oe: {
+            layers: response.oe?.layers,
+            foveal_depression: response.oe?.foveal_depression,
+            retinal_surface: response.oe?.retinal_surface,
+            inner_layers: response.oe?.inner_layers,
+            outer_layers: response.oe?.outer_layers,
+            rpe_choroid_complex: response.oe?.rpe_choroid_complex,
+            clinical_notes: response.oe?.clinical_notes,
+          },
+          comparison: response.comparison,
+          overall_clinical_notes: response.overall_clinical_notes,
+        };
+        result.biomarkers = {
+          bilateral: true,
+          od: response.od?.biomarkers,
+          oe: response.oe?.biomarkers,
+        };
+        result.measurements = {
+          bilateral: true,
+          od: response.od?.measurements,
+          oe: response.oe?.measurements,
+        };
+        break;
 
-    case 'retinography':
-      result.retinography_analysis = {
-        optic_disc: response.optic_disc,
-        macula: response.macula,
-        vessels: response.vessels,
-        retina_general: response.retina_general,
-        classifications: response.classifications,
-        urgency: response.urgency,
-      };
-      result.biomarkers = response.biomarkers;
-      result.findings = {
-        clinical_notes: response.clinical_notes,
-      };
-      break;
+      case 'oct_nerve':
+        result.optic_nerve_analysis = {
+          bilateral: true,
+          od: {
+            rnfl: response.od?.rnfl,
+            optic_disc: response.od?.optic_disc,
+            clinical_notes: response.od?.clinical_notes,
+          },
+          oe: {
+            rnfl: response.oe?.rnfl,
+            optic_disc: response.oe?.optic_disc,
+            clinical_notes: response.oe?.clinical_notes,
+          },
+          comparison: response.comparison,
+        };
+        result.biomarkers = {
+          bilateral: true,
+          od: response.od?.biomarkers_glaucoma,
+          oe: response.oe?.biomarkers_glaucoma,
+        };
+        result.risk_classification = response.risk_classification?.glaucoma_risk || null;
+        result.findings = {
+          bilateral: true,
+          staging: response.diagnosis?.staging,
+          overall_clinical_notes: response.overall_clinical_notes,
+        };
+        break;
+
+      case 'retinography':
+        result.retinography_analysis = {
+          bilateral: true,
+          od: {
+            optic_disc: response.od?.optic_disc,
+            macula: response.od?.macula,
+            vessels: response.od?.vessels,
+            retina_general: response.od?.retina_general,
+            clinical_notes: response.od?.clinical_notes,
+          },
+          oe: {
+            optic_disc: response.oe?.optic_disc,
+            macula: response.oe?.macula,
+            vessels: response.oe?.vessels,
+            retina_general: response.oe?.retina_general,
+            clinical_notes: response.oe?.clinical_notes,
+          },
+          comparison: response.comparison,
+          classifications: response.classifications,
+          urgency: response.urgency,
+        };
+        result.findings = {
+          bilateral: true,
+          overall_clinical_notes: response.overall_clinical_notes,
+        };
+        break;
+    }
+  } else {
+    // Single eye response (existing logic)
+    result.quality_score = response.quality?.score || null;
+
+    switch (examType) {
+      case 'oct_macular':
+        result.findings = {
+          layers: response.layers,
+          foveal_depression: response.foveal_depression,
+          retinal_surface: response.retinal_surface,
+          inner_layers: response.inner_layers,
+          outer_layers: response.outer_layers,
+          rpe_choroid_complex: response.rpe_choroid_complex,
+          clinical_notes: response.clinical_notes,
+        };
+        result.biomarkers = response.biomarkers;
+        result.measurements = response.measurements;
+        break;
+
+      case 'oct_nerve':
+        result.optic_nerve_analysis = {
+          rnfl: response.rnfl,
+          optic_disc: response.optic_disc,
+          ganglion_cell_analysis: response.ganglion_cell_analysis,
+          comparison: response.comparison,
+        };
+        result.biomarkers = response.biomarkers_glaucoma;
+        result.risk_classification = response.risk_classification?.glaucoma_risk || null;
+        result.findings = {
+          staging: response.diagnosis?.staging,
+          clinical_notes: response.clinical_notes,
+        };
+        break;
+
+      case 'retinography':
+        result.retinography_analysis = {
+          optic_disc: response.optic_disc,
+          macula: response.macula,
+          vessels: response.vessels,
+          retina_general: response.retina_general,
+          classifications: response.classifications,
+          urgency: response.urgency,
+        };
+        result.biomarkers = response.biomarkers;
+        result.findings = {
+          clinical_notes: response.clinical_notes,
+        };
+        break;
+    }
   }
 
   return result;
@@ -531,7 +1025,8 @@ serve(async (req) => {
       );
     }
 
-    console.log('[analyze-image] Exam found:', { type: exam.exam_type, eye: exam.eye });
+    const isBilateral = exam.eye === 'both';
+    console.log('[analyze-image] Exam found:', { type: exam.exam_type, eye: exam.eye, bilateral: isBilateral });
 
     // Update exam status to analyzing
     await supabase
@@ -557,17 +1052,47 @@ serve(async (req) => {
 
     console.log('[analyze-image] Found', images.length, 'images');
 
-    // Download first image and convert to base64
-    const firstImage = images[0];
-    let imageBase64: string;
+    // Use service role client for storage access
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+
+    // Prepare images for analysis
+    const imageContents: { type: string; image_url: { url: string } }[] = [];
     
     try {
-      // Use service role client for storage access
-      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+      if (isBilateral && images.length >= 2) {
+        // For bilateral exams, include both images
+        // Separate images by eye
+        const odImages = images.filter(img => img.eye === 'od');
+        const oeImages = images.filter(img => img.eye === 'oe');
+        
+        if (odImages.length > 0) {
+          const odBase64 = await downloadImageAsBase64(odImages[0].image_url, serviceClient);
+          imageContents.push({ type: 'image_url', image_url: { url: odBase64 } });
+          console.log('[analyze-image] OD image converted to base64');
+        }
+        
+        if (oeImages.length > 0) {
+          const oeBase64 = await downloadImageAsBase64(oeImages[0].image_url, serviceClient);
+          imageContents.push({ type: 'image_url', image_url: { url: oeBase64 } });
+          console.log('[analyze-image] OE image converted to base64');
+        }
+        
+        // If we don't have both, fall back to first two images
+        if (imageContents.length < 2) {
+          for (let i = 0; i < Math.min(2, images.length); i++) {
+            if (imageContents.length >= 2) break;
+            const base64 = await downloadImageAsBase64(images[i].image_url, serviceClient);
+            imageContents.push({ type: 'image_url', image_url: { url: base64 } });
+          }
+        }
+      } else {
+        // Single eye - just use first image
+        const imageBase64 = await downloadImageAsBase64(images[0].image_url, serviceClient);
+        imageContents.push({ type: 'image_url', image_url: { url: imageBase64 } });
+      }
       
-      imageBase64 = await downloadImageAsBase64(firstImage.image_url, serviceClient);
-      console.log('[analyze-image] Image converted to base64, length:', imageBase64.length);
+      console.log('[analyze-image] Total images prepared:', imageContents.length);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       console.error('[analyze-image] Image download error:', error);
@@ -579,8 +1104,8 @@ serve(async (req) => {
     }
 
     // Get the appropriate prompt
-    const prompt = getPromptForExamType(exam.exam_type);
-    console.log('[analyze-image] Using prompt for:', exam.exam_type);
+    const prompt = getPromptForExamType(exam.exam_type, isBilateral);
+    console.log('[analyze-image] Using prompt for:', exam.exam_type, 'bilateral:', isBilateral);
 
     // Call Lovable AI Gateway
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -595,6 +1120,10 @@ serve(async (req) => {
 
     console.log('[analyze-image] Calling Lovable AI Gateway...');
     
+    // Build message content with text prompt and images
+    const messageContent: any[] = [{ type: 'text', text: prompt }];
+    imageContents.forEach(img => messageContent.push(img));
+    
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -606,10 +1135,7 @@ serve(async (req) => {
         messages: [
           {
             role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              { type: 'image_url', image_url: { url: imageBase64 } }
-            ]
+            content: messageContent
           }
         ],
         max_tokens: 8000,
@@ -663,7 +1189,7 @@ serve(async (req) => {
     let parsedResponse: any;
     try {
       parsedResponse = extractJsonFromResponse(aiContent);
-      console.log('[analyze-image] JSON parsed successfully');
+      console.log('[analyze-image] JSON parsed successfully, bilateral:', parsedResponse.bilateral === true);
     } catch (parseError) {
       console.error('[analyze-image] JSON parse error:', parseError);
       console.log('[analyze-image] Raw AI content:', aiContent.substring(0, 500));
@@ -675,7 +1201,7 @@ serve(async (req) => {
     }
 
     // Map response to database schema
-    const mappedData = mapResponseToAnalysis(exam.exam_type, parsedResponse);
+    const mappedData = mapResponseToAnalysis(exam.exam_type, parsedResponse, isBilateral);
 
     // Insert analysis into database
     const { data: analysis, error: insertError } = await supabase
@@ -722,6 +1248,7 @@ serve(async (req) => {
         success: true,
         analysis_id: analysis.id,
         exam_id,
+        bilateral: isBilateral,
         message: 'Análise concluída com sucesso',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

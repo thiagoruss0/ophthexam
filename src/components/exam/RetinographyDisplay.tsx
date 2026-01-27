@@ -4,6 +4,7 @@ import { BiomarkersDisplay } from "./BiomarkersDisplay";
 import { eyeLabels, getQualityInfo, getStatusInfo } from "./analysisLabels";
 import { Check, AlertCircle, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BilateralRetinographyDisplay } from "./BilateralRetinographyDisplay";
 
 interface RetinographyDisplayProps {
   analysis: {
@@ -22,6 +23,14 @@ interface RetinographyDisplayProps {
 export function RetinographyDisplay({ analysis, eye }: RetinographyDisplayProps) {
   const findings = analysis.findings || {};
   const retinoAnalysis = analysis.retinography_analysis || {};
+  
+  // Check if bilateral analysis
+  const isBilateral = retinoAnalysis.bilateral === true || findings.bilateral === true;
+  
+  if (isBilateral && (retinoAnalysis.od || retinoAnalysis.oe)) {
+    return <BilateralRetinographyDisplay analysis={analysis} />;
+  }
+  
   const qualityInfo = analysis.quality_score 
     ? getQualityInfo(analysis.quality_score) 
     : null;
