@@ -15,7 +15,7 @@ import {
   Activity,
   Eye as EyeIcon,
   Calendar,
-  User,
+  Star,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<ExamStats | null>(null);
   const [recentExams, setRecentExams] = useState<RecentExam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
 
   useEffect(() => {
     if (profile?.id) {
@@ -121,6 +122,12 @@ export default function DashboardPage() {
       })) || [];
 
       setRecentExams(recent);
+
+      // Count exams without feedback using RPC function
+      const { data: pendingCount } = await supabase.rpc("count_exams_without_feedback", {
+        doctor_profile_id: profile?.id,
+      });
+      setPendingFeedbackCount(pendingCount || 0);
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -167,6 +174,32 @@ export default function DashboardPage() {
             </Button>
           </Link>
         </div>
+
+        {/* Pending Feedback Reminder */}
+        {pendingFeedbackCount > 0 && (
+          <Card className="mb-6 bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Star className="h-5 w-5 text-yellow-600" />
+                  <div>
+                    <p className="font-medium text-yellow-900 dark:text-yellow-100">
+                      {pendingFeedbackCount} exame(s) aguardando avaliação da IA
+                    </p>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      Seu feedback ajuda a melhorar as análises futuras
+                    </p>
+                  </div>
+                </div>
+                <Link to="/historico?status=approved">
+                  <Button size="sm" variant="outline" className="border-yellow-400">
+                    Avaliar
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4 mb-8">
