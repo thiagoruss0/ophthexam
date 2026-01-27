@@ -564,6 +564,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_stuck_analyzing_exams: {
+        Args: never
+        Returns: {
+          cleaned_count: number
+          exam_ids: string[]
+        }[]
+      }
       count_exams_without_feedback: {
         Args: { doctor_profile_id: string }
         Returns: number

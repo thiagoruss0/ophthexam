@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.share-report]
 verify_jwt = false
+
+[functions.cleanup-stuck-exams]
+verify_jwt = false
