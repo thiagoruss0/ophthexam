@@ -1,156 +1,59 @@
 
 
-# Plano: Edge Function "analyze-image"
+# Plano: Aprovar e Tornar Admin o Usuário
 
-## Objetivo
-Criar uma Edge Function que analisa imagens oftalmológicas usando Lovable AI (Google Gemini) com os prompts específicos fornecidos para cada tipo de exame.
+## Dados do Usuário Encontrado
+
+| Campo | Valor |
+|-------|-------|
+| Email | benaion.thiago@gmail.com |
+| Nome | Thiago Russo |
+| CRM | 6222/AM |
+| Status Atual | pending |
+| User ID | 16481ed3-7bf1-4a74-ae16-30f3a4799393 |
+| Profile ID | 1cdba824-4399-475a-a728-7edd0b8d20c5 |
 
 ---
 
-## Arquitetura da Solução
+## Ações Necessárias
 
-```text
-+-------------------+      +--------------------+      +------------------+
-|  Frontend (React) | ---> | Edge Function      | ---> | Lovable AI       |
-|  NewAnalysis.tsx  |      | analyze-image      |      | (Gemini Pro)     |
-+-------------------+      +--------------------+      +------------------+
-         |                          |                          |
-         |  POST { exam_id }        |  1. Busca exam + images  |
-         |                          |  2. Seleciona prompt     |
-         |                          |  3. Envia para AI        |
-         |                          |  4. Salva em ai_analysis |
-         |                          |  5. Atualiza exam status |
-         |                          |                          |
-         +<---- Redirect -----------+<---- JSON Response ------+
+### 1. Aprovar o Perfil
+Atualizar o status do perfil de "pending" para "approved".
+
+### 2. Adicionar Papel de Admin
+Inserir registro na tabela `user_roles` com o papel "admin".
+
+---
+
+## Queries SQL a Executar
+
+As seguintes queries serão executadas no banco de dados:
+
+```sql
+-- 1. Aprovar o perfil do usuário
+UPDATE profiles 
+SET status = 'approved', updated_at = now() 
+WHERE user_id = '16481ed3-7bf1-4a74-ae16-30f3a4799393';
+
+-- 2. Adicionar papel de admin
+INSERT INTO user_roles (user_id, role) 
+VALUES ('16481ed3-7bf1-4a74-ae16-30f3a4799393', 'admin');
 ```
 
 ---
 
-## Implementacao
+## Resultado Esperado
 
-### 1. Criar Edge Function
-
-**Arquivo:** `supabase/functions/analyze-image/index.ts`
-
-**Funcionalidades:**
-- Receber `exam_id` no body da requisicao
-- Buscar dados do exame e imagens no Supabase
-- Selecionar o prompt correto baseado no `exam_type`
-- Baixar a imagem e converter para base64
-- Enviar para Lovable AI Gateway com modelo `google/gemini-2.5-pro` (melhor para imagens)
-- Parsear resposta JSON da IA
-- Salvar resultado estruturado na tabela `ai_analysis`
-- Atualizar status do exame para `analyzed`
-- Retornar resultado
-
-### 2. Estrutura dos Prompts
-
-Serao armazenados na propria Edge Function:
-
-| Tipo de Exame | Prompt | Campos de Saida |
-|---------------|--------|-----------------|
-| `oct_macular` | Analise de camadas retinianas, biomarcadores, medidas | quality, layers, biomarkers, measurements, diagnosis |
-| `oct_nerve` | Analise de RNFL, disco optico, celulas ganglionares | quality, rnfl, optic_disc, ganglion_cell_analysis, biomarkers_glaucoma, risk_classification |
-| `retinography` | Analise de fundo de olho completo | quality, optic_disc, macula, vessels, retina_general, biomarkers, classifications |
-
-### 3. Mapeamento de Campos para ai_analysis
-
-| Campo do Prompt | Coluna ai_analysis |
-|-----------------|-------------------|
-| quality | quality_score |
-| layers/biomarkers | findings (JSON) |
-| biomarcadores especificos | biomarkers (JSON) |
-| rnfl/optic_disc | optic_nerve_analysis (JSON) |
-| macula/vessels/retina_general | retinography_analysis (JSON) |
-| measurements | measurements (JSON) |
-| diagnosis.primary | diagnosis (array) |
-| recommendations | recommendations (array) |
-| risk_classification | risk_classification |
-| resposta completa | raw_response (JSON) |
-
-### 4. Atualizar config.toml
-
-Adicionar configuracao da nova funcao com `verify_jwt = false` (validacao feita no codigo).
+Após a execução:
+- O usuário será redirecionado automaticamente para o Dashboard (a página atual `/aguardando-aprovacao` detectará a mudança de status)
+- O menu Admin aparecerá na navegação
+- O usuário terá acesso total ao painel administrativo para gerenciar outros médicos
 
 ---
 
-## Fluxo de Execucao
+## Implementação
 
-1. **Receber requisicao** com `exam_id`
-2. **Validar autenticacao** via header Authorization
-3. **Buscar exame** no banco de dados
-4. **Buscar imagens** associadas ao exame
-5. **Baixar primeira imagem** e converter para base64
-6. **Selecionar prompt** baseado no `exam_type`
-7. **Chamar Lovable AI** com imagem + prompt
-8. **Parsear resposta** JSON
-9. **Mapear campos** para estrutura do banco
-10. **Inserir em ai_analysis**
-11. **Atualizar exame** para status `analyzed`
-12. **Retornar sucesso** com ID da analise
-
----
-
-## Tratamento de Erros
-
-- **Exame nao encontrado**: Retorna 404
-- **Sem imagens**: Retorna 400
-- **Erro na IA**: Retorna 500 com mensagem
-- **JSON invalido da IA**: Tenta extrair dados parciais
-- **Rate limit (429)**: Informa usuario para tentar novamente
-- **Creditos esgotados (402)**: Informa sobre necessidade de creditos
-
----
-
-## Seguranca
-
-- Validacao de JWT via `getClaims()`
-- Verificacao de que o usuario tem acesso ao exame
-- CORS headers configurados
-- Logs para auditoria
-
----
-
-## Detalhes Tecnicos
-
-### Modelo de IA
-- **Modelo:** `google/gemini-2.5-pro` (melhor para analise de imagens medicas)
-- **Gateway:** `https://ai.gateway.lovable.dev/v1/chat/completions`
-- **API Key:** `LOVABLE_API_KEY` (ja configurada automaticamente)
-
-### Formato da Requisicao para IA
-```json
-{
-  "model": "google/gemini-2.5-pro",
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        { "type": "text", "text": "<PROMPT_ESPECIFICO>" },
-        { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,..." } }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## Arquivos a Criar/Modificar
-
-1. **Criar:** `supabase/functions/analyze-image/index.ts`
-   - Edge Function completa com prompts e logica
-
-2. **Modificar:** `supabase/config.toml`
-   - Adicionar configuracao da funcao analyze-image
-
----
-
-## Estimativa
-
-A implementacao inclui:
-- Edge Function com aproximadamente 400 linhas
-- Os 3 prompts completos fornecidos
-- Logica de tratamento de erros robusta
-- Logging detalhado para debug
+Quando você aprovar este plano, vou executar as queries acima para:
+1. Aprovar a conta
+2. Conceder privilégios de administrador
 
