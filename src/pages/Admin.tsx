@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
-import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,7 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Users, Clock, CheckCircle, XCircle, UserCheck, UserX, Activity } from "lucide-react";
+import { Users, Clock, CheckCircle, UserCheck, UserX, Activity, Brain } from "lucide-react";
 
 interface PendingDoctor {
   id: string;
@@ -233,6 +233,26 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* AI Metrics Card */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" />
+              Métricas da IA
+            </CardTitle>
+            <CardDescription>
+              Acompanhe a performance das análises e exporte dados para treinamento
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link to="/admin/ai-metrics">
+              <Button className="w-full sm:w-auto">
+                Ver Métricas
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
 
         <Tabs defaultValue="pending" className="space-y-6">
           <TabsList>

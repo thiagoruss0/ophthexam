@@ -73,6 +73,100 @@ export type Database = {
           },
         ]
       }
+      ai_feedback: {
+        Row: {
+          accuracy_rating: string | null
+          ai_analysis_id: string | null
+          biomarkers_feedback: Json | null
+          case_difficulty: string | null
+          created_at: string | null
+          diagnosis_added: string[] | null
+          diagnosis_correct: string[] | null
+          diagnosis_feedback: string | null
+          diagnosis_removed: string[] | null
+          doctor_id: string
+          exam_id: string
+          general_comments: string | null
+          id: string
+          is_reference_case: boolean | null
+          measurements_feedback: Json | null
+          overall_rating: number | null
+          pathology_tags: string[] | null
+          quality_correct: string | null
+          quality_feedback: string | null
+          teaching_notes: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          accuracy_rating?: string | null
+          ai_analysis_id?: string | null
+          biomarkers_feedback?: Json | null
+          case_difficulty?: string | null
+          created_at?: string | null
+          diagnosis_added?: string[] | null
+          diagnosis_correct?: string[] | null
+          diagnosis_feedback?: string | null
+          diagnosis_removed?: string[] | null
+          doctor_id: string
+          exam_id: string
+          general_comments?: string | null
+          id?: string
+          is_reference_case?: boolean | null
+          measurements_feedback?: Json | null
+          overall_rating?: number | null
+          pathology_tags?: string[] | null
+          quality_correct?: string | null
+          quality_feedback?: string | null
+          teaching_notes?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          accuracy_rating?: string | null
+          ai_analysis_id?: string | null
+          biomarkers_feedback?: Json | null
+          case_difficulty?: string | null
+          created_at?: string | null
+          diagnosis_added?: string[] | null
+          diagnosis_correct?: string[] | null
+          diagnosis_feedback?: string | null
+          diagnosis_removed?: string[] | null
+          doctor_id?: string
+          exam_id?: string
+          general_comments?: string | null
+          id?: string
+          is_reference_case?: boolean | null
+          measurements_feedback?: Json | null
+          overall_rating?: number | null
+          pathology_tags?: string[] | null
+          quality_correct?: string | null
+          quality_feedback?: string | null
+          teaching_notes?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_feedback_ai_analysis_id_fkey"
+            columns: ["ai_analysis_id"]
+            isOneToOne: false
+            referencedRelation: "ai_analysis"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_feedback_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_feedback_exam_id_fkey"
+            columns: ["exam_id"]
+            isOneToOne: false
+            referencedRelation: "exams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: string
@@ -470,6 +564,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      count_exams_without_feedback: {
+        Args: { doctor_profile_id: string }
+        Returns: number
+      }
       get_profile_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

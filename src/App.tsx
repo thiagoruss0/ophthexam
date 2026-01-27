@@ -17,6 +17,7 @@ import HistoryPage from "./pages/History";
 import PatientPage from "./pages/Patient";
 import SettingsPage from "./pages/Settings";
 import AdminPage from "./pages/Admin";
+import AiMetricsPage from "./pages/AiMetrics";
 import SharedReportPage from "./pages/SharedReport";
 
 const queryClient = new QueryClient();
@@ -91,6 +92,14 @@ const App = () => (
               element={
                 <ProtectedRoute requireAdmin>
                   <AdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/ai-metrics"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AiMetricsPage />
                 </ProtectedRoute>
               }
             />

@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { AiFeedbackForm } from "@/components/exam/AiFeedbackForm";
 import {
   generateExamPdf,
   downloadPdf,
@@ -34,6 +35,7 @@ import {
   Calendar,
   User,
   Copy,
+  Star,
 } from "lucide-react";
 
 interface ExamData {
@@ -80,6 +82,8 @@ export default function ExamViewPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [hasFeedback, setHasFeedback] = useState<boolean | null>(null);
+  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
 
   const fetchExamData = useCallback(async () => {
     if (!id) return;
@@ -130,6 +134,18 @@ export default function ExamViewPage() {
 
       setExam(examData);
       setDoctorNotes(examData.report?.doctor_notes || "");
+
+      // Check if feedback already exists
+      if (profile?.id && examData.status === "approved") {
+        const { data: feedbackData } = await supabase
+          .from("ai_feedback")
+          .select("id")
+          .eq("exam_id", id)
+          .eq("doctor_id", profile.id)
+          .maybeSingle();
+        
+        setHasFeedback(!!feedbackData);
+      }
     } catch (error) {
       console.error("Error fetching exam:", error);
       toast({
@@ -139,7 +155,7 @@ export default function ExamViewPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [id, toast]);
+  }, [id, toast, profile?.id]);
 
   useEffect(() => {
     if (id) {
@@ -767,6 +783,61 @@ export default function ExamViewPage() {
                       )}
                       Compartilhar
                     </Button>
+                  </div>
+                )}
+
+                {/* Feedback Section */}
+                {exam.status === "approved" && hasFeedback === false && !showFeedbackForm && (
+                  <Card className="mt-4 bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800">
+                    <CardContent className="py-4">
+                      <div className="flex items-start gap-3">
+                        <Star className="h-5 w-5 text-yellow-600 mt-0.5" />
+                        <div className="flex-1">
+                          <h4 className="font-medium text-yellow-900 dark:text-yellow-100">
+                            Avalie a Análise da IA
+                          </h4>
+                          <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                            Seu feedback ajuda a melhorar as análises futuras
+                          </p>
+                          <div className="flex gap-2 mt-3">
+                            <Button
+                              size="sm"
+                              onClick={() => setShowFeedbackForm(true)}
+                            >
+                              Avaliar Análise
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setHasFeedback(true)}
+                            >
+                              Pular
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {exam.status === "approved" && showFeedbackForm && profile && (
+                  <AiFeedbackForm
+                    examId={exam.id}
+                    analysisId={exam.analysis?.id}
+                    analysis={exam.analysis}
+                    doctorId={profile.id}
+                    onSubmit={() => {
+                      setHasFeedback(true);
+                      setShowFeedbackForm(false);
+                    }}
+                    onSkip={() => setShowFeedbackForm(false)}
+                  />
+                )}
+
+                {exam.status === "approved" && hasFeedback === true && !showFeedbackForm && (
+                  <div className="mt-4 flex items-center gap-2 text-success">
+                    <CheckCircle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Feedback registrado</span>
                   </div>
                 )}
               </CardContent>
