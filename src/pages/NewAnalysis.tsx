@@ -214,13 +214,17 @@ export default function NewAnalysisPage() {
 
       if (analysisError) {
         console.error("Analysis error:", analysisError);
-        // Continue even if analysis fails - user can retry later
+        toast({
+          title: "Erro na análise de IA",
+          description: "A análise será tentada novamente. Verifique na página do exame.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Análise iniciada!",
+          description: "Redirecionando para visualização do exame...",
+        });
       }
-
-      toast({
-        title: "Análise iniciada!",
-        description: "Redirecionando para visualização do exame...",
-      });
 
       navigate(`/exame/${examData.id}`);
     } catch (error) {
