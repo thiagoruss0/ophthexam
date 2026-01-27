@@ -1,76 +1,158 @@
 
-# Plano: Corrigir Exibicao de Imagens do Exame
+
+# Plano: Corrigir Busca de Análise Mais Recente
 
 ## Problema Identificado
 
-A imagem do exame nao esta aparecendo porque:
+Existem **múltiplas análises** para o mesmo exame no banco de dados (3 no caso atual):
 
-1. O bucket `exam-images` esta configurado como **privado** (`public: false`)
-2. O codigo em `NewAnalysis.tsx` usa `getPublicUrl()` para gerar a URL da imagem
-3. URLs publicas so funcionam para buckets publicos
-4. A URL armazenada (`/object/public/exam-images/...`) retorna erro 403 ou imagem nao encontrada
+1. `0fde75d3...` - análise antiga, **sem flag bilateral**
+2. `72f4dd68...` - análise nova, **com bilateral: true**  
+3. `4b2067e0...` - análise nova, **com bilateral: true**
 
----
+O código em `ExamView.tsx` linha 142 pega o **primeiro elemento do array** sem ordenação:
 
-## Solucoes Possiveis
-
-### Opcao A: Tornar o Bucket Publico (Recomendado)
-- Mais simples e rapido
-- Imagens de exames ja estao protegidas por RLS na tabela `exam_images`
-- Nao requer mudancas no frontend
-
-### Opcao B: Usar URLs Assinadas
-- Mais seguro (URLs temporarias)
-- Requer mudancas no frontend para gerar URLs assinadas ao carregar
-- Complexidade adicional
-
-**Recomendacao**: Opcao A - Tornar o bucket publico, ja que o acesso aos exames ja e controlado por RLS nas tabelas.
-
----
-
-## Implementacao (Opcao A)
-
-### Passo 1: Atualizar Bucket para Publico
-
-Executar migracao SQL para tornar o bucket publico:
-
-```sql
-UPDATE storage.buckets 
-SET public = true 
-WHERE id = 'exam-images';
+```typescript
+analysis: (data.ai_analysis as any[])?.[0],
 ```
 
-Isso permitira que as URLs publicas funcionem e as imagens sejam exibidas.
+O Supabase não garante ordem específica quando não há `ORDER BY`, então pode retornar a análise mais antiga (sem bilateral), causando a exibição incorreta.
 
 ---
 
-## Consideracoes de Seguranca
+## Solução
 
-- O bucket se torna publico, mas as URLs contem IDs de exames (UUIDs)
-- UUIDs sao imprevisiveis e nao podem ser adivinhados
-- O acesso aos metadados do exame continua protegido por RLS
-- Esta e uma pratica comum para imagens medicas que precisam ser exibidas no frontend
+### 1. Modificar a Query para Ordenar por Data
+
+Atualizar a query em `fetchExamData()` para ordenar as análises pela data de criação mais recente:
+
+**Arquivo:** `src/pages/ExamView.tsx`
+
+```typescript
+// Antes (linha 113):
+ai_analysis (...)
+
+// Depois:
+ai_analysis!inner (...)
+// E usar order ou filtrar apenas a última
+```
+
+**Problema:** O Supabase não permite `ORDER BY` dentro de sub-relacionamentos na mesma query.
+
+### 2. Solução Alternativa: Query Separada
+
+Buscar a análise mais recente em uma query separada:
+
+```typescript
+// Após buscar o exame:
+const { data: analysisData } = await supabase
+  .from('ai_analysis')
+  .select('*')
+  .eq('exam_id', id)
+  .order('id', { ascending: false }) // UUIDs v4 não são ordenados, usar created_at se disponível
+  .limit(1)
+  .single();
+```
+
+**Nota:** Se a tabela `ai_analysis` não tem `created_at`, podemos:
+- A. Usar a ordem de inserção via ID (menos confiável)
+- B. Adicionar coluna `created_at` (ideal)
+
+### 3. Verificar se `ai_analysis` tem `created_at`
+
+Se não tiver, adicionar via migração.
 
 ---
 
-## Alternativa (Opcao B - Se Necessario Maior Seguranca)
+## Implementação Recomendada
 
-Se preferir manter o bucket privado, seria necessario:
+### Passo 1: Adicionar `created_at` à tabela `ai_analysis` (se não existir)
 
-1. Criar funcao para gerar URLs assinadas
-2. Modificar `ExamView.tsx` para buscar URL assinada antes de exibir
-3. Modificar `NewAnalysis.tsx` para salvar apenas o path, nao a URL publica
+```sql
+ALTER TABLE public.ai_analysis 
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+```
+
+### Passo 2: Modificar `fetchExamData()` em `ExamView.tsx`
+
+```typescript
+// Buscar análise mais recente separadamente
+const { data: latestAnalysis } = await supabase
+  .from('ai_analysis')
+  .select(`
+    id,
+    quality_score,
+    findings,
+    biomarkers,
+    measurements,
+    diagnosis,
+    recommendations,
+    risk_classification
+  `)
+  .eq('exam_id', id)
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+// Usar esta análise em vez de [0] do array
+```
+
+### Passo 3: Limpar Análises Antigas ao Re-analisar
+
+Modificar `handleReanalyze()` para deletar **todas** as análises anteriores:
+
+```typescript
+// Antes:
+if (exam.analysis?.id) {
+  await supabase.from("ai_analysis").delete().eq("id", exam.analysis.id);
+}
+
+// Depois:
+await supabase.from("ai_analysis").delete().eq("exam_id", exam.id);
+```
+
+Isso garante que não fiquem análises órfãs.
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Modificacao |
+| Arquivo | Modificação |
 |---------|-------------|
-| Migracao SQL | Atualizar bucket para publico |
+| Migração SQL | Adicionar `created_at` se não existir |
+| `src/pages/ExamView.tsx` | Buscar análise mais recente, limpar todas ao re-analisar |
 
 ---
 
-## Resumo
+## Fluxo Corrigido
 
-O problema e simples: o bucket esta privado mas o codigo usa URLs publicas. A solucao mais rapida e tornar o bucket publico, ja que a seguranca dos dados do exame ja esta garantida por RLS.
+```text
+1. Exame tem múltiplas análises
+   |
+   v
+2. Query ordena por created_at DESC
+   |
+   v
+3. Pega análise mais recente (com bilateral)
+   |
+   v
+4. Exibe corretamente OD e OE separados
+```
+
+---
+
+## Benefícios
+
+1. **Sempre usa análise mais recente:** Nunca pega análise antiga
+2. **Limpa análises órfãs:** Re-análise remove todas as anteriores
+3. **Auditoria:** `created_at` permite rastrear quando cada análise foi criada
+4. **Performance:** Query simples com `LIMIT 1`
+
+---
+
+## Considerações
+
+- A adição de `created_at` não afeta análises existentes (terão valor `now()` após migração)
+- Análises existentes podem ser limpas manualmente se desejado
+- A mudança é retrocompatível
+
