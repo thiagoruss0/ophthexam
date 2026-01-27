@@ -96,6 +96,7 @@ export default function ExamViewPage() {
     if (!id) return;
     
     try {
+      // Fetch exam data without analysis (we'll fetch it separately for ordering)
       const { data, error } = await supabase
         .from("exams")
         .select(`
@@ -110,22 +111,32 @@ export default function ExamViewPage() {
           updated_at,
           patients (id, name),
           exam_images (id, image_url, eye),
-          ai_analysis (
-            id,
-            quality_score,
-            findings,
-            biomarkers,
-            measurements,
-            diagnosis,
-            recommendations,
-            risk_classification
-          ),
           reports (id, doctor_notes, final_diagnosis, approved_at)
         `)
         .eq("id", id)
         .single();
 
       if (error) throw error;
+
+      // Fetch the most recent analysis separately with proper ordering
+      const { data: latestAnalysis } = await supabase
+        .from("ai_analysis")
+        .select(`
+          id,
+          quality_score,
+          findings,
+          biomarkers,
+          measurements,
+          diagnosis,
+          recommendations,
+          risk_classification,
+          optic_nerve_analysis,
+          retinography_analysis
+        `)
+        .eq("exam_id", id)
+        .order("analyzed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       const examData: ExamData = {
         id: data.id,
@@ -139,7 +150,7 @@ export default function ExamViewPage() {
         updated_at: data.updated_at,
         patient: data.patients as any,
         images: data.exam_images as any[],
-        analysis: (data.ai_analysis as any[])?.[0],
+        analysis: latestAnalysis || undefined,
         report: (data.reports as any[])?.[0],
       };
 
@@ -421,13 +432,11 @@ export default function ExamViewPage() {
 
     setIsReanalyzing(true);
     try {
-      // Delete existing analysis if any
-      if (exam.analysis?.id) {
-        await supabase
-          .from("ai_analysis")
-          .delete()
-          .eq("id", exam.analysis.id);
-      }
+      // Delete ALL existing analyses for this exam (cleanup orphans)
+      await supabase
+        .from("ai_analysis")
+        .delete()
+        .eq("exam_id", exam.id);
 
       // Update exam status to analyzing
       await supabase
