@@ -46,6 +46,8 @@ interface ExamData {
   equipment?: string;
   clinical_indication?: string;
   status: string;
+  created_at: string;
+  updated_at: string;
   patient: { id: string; name: string };
   images: { id: string; image_url: string; eye: string }[];
   analysis?: {
@@ -84,6 +86,11 @@ export default function ExamViewPage() {
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [hasFeedback, setHasFeedback] = useState<boolean | null>(null);
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
+  
+  // Timeout tracking for analysis
+  const [analysisStartTime, setAnalysisStartTime] = useState<Date | null>(null);
+  const [analysisTimeout, setAnalysisTimeout] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const fetchExamData = useCallback(async () => {
     if (!id) return;
@@ -99,6 +106,8 @@ export default function ExamViewPage() {
           equipment,
           clinical_indication,
           status,
+          created_at,
+          updated_at,
           patients (id, name),
           exam_images (id, image_url, eye),
           ai_analysis (
@@ -126,6 +135,8 @@ export default function ExamViewPage() {
         equipment: data.equipment,
         clinical_indication: data.clinical_indication,
         status: data.status,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
         patient: data.patients as any,
         images: data.exam_images as any[],
         analysis: (data.ai_analysis as any[])?.[0],
@@ -173,6 +184,47 @@ export default function ExamViewPage() {
 
     return () => clearInterval(interval);
   }, [exam?.status, fetchExamData]);
+
+  // Timeout detection for analysis (2 minutes = 120 seconds)
+  useEffect(() => {
+    if (exam?.status !== "analyzing") {
+      setAnalysisStartTime(null);
+      setAnalysisTimeout(false);
+      setElapsedSeconds(0);
+      return;
+    }
+
+    // Set start time based on exam's updated_at
+    if (!analysisStartTime) {
+      setAnalysisStartTime(new Date(exam.updated_at || exam.created_at));
+    }
+
+    const checkTimeout = setInterval(async () => {
+      const startTime = analysisStartTime || new Date(exam.updated_at || exam.created_at);
+      const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000);
+      setElapsedSeconds(elapsed);
+
+      if (elapsed >= 120 && !analysisTimeout) { // 2 minutes
+        setAnalysisTimeout(true);
+        
+        // Revert status to pending
+        await supabase
+          .from("exams")
+          .update({ status: "pending" })
+          .eq("id", exam.id);
+        
+        toast({
+          title: "Tempo limite excedido",
+          description: "A análise não foi concluída em 2 minutos. Você pode tentar novamente.",
+          variant: "destructive",
+        });
+
+        fetchExamData();
+      }
+    }, 1000);
+
+    return () => clearInterval(checkTimeout);
+  }, [exam?.status, exam?.id, exam?.updated_at, exam?.created_at, analysisStartTime, analysisTimeout, toast, fetchExamData]);
 
   const handleSaveDraft = async () => {
     if (!exam) return;
@@ -570,17 +622,71 @@ export default function ExamViewPage() {
 
           {/* Analysis Section */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Analyzing in Progress Card */}
+            {/* Analysis Status Cards */}
             {exam.status === "analyzing" && (
-              <Card className="bg-blue-50 border-blue-200">
+              <Card className={elapsedSeconds >= 60 ? "bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" : "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"}>
                 <CardContent className="py-6">
                   <div className="flex flex-col items-center text-center gap-3">
-                    <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+                    <Loader2 className={`h-10 w-10 animate-spin ${elapsedSeconds >= 60 ? "text-yellow-600" : "text-blue-600"}`} />
                     <div>
-                      <h3 className="font-semibold text-blue-900">Análise em andamento</h3>
-                      <p className="text-sm text-blue-700 mt-1">
-                        A IA está processando a imagem. Isso pode levar até 30 segundos.
+                      <h3 className={`font-semibold ${elapsedSeconds >= 60 ? "text-yellow-900 dark:text-yellow-100" : "text-blue-900 dark:text-blue-100"}`}>
+                        {elapsedSeconds >= 60 ? "Análise demorando mais que o normal..." : "Análise em andamento"}
+                      </h3>
+                      <p className={`text-sm mt-1 ${elapsedSeconds >= 60 ? "text-yellow-700 dark:text-yellow-300" : "text-blue-700 dark:text-blue-300"}`}>
+                        {elapsedSeconds >= 60 
+                          ? `Tempo decorrido: ${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, '0')}. Aguarde ou tente novamente.`
+                          : "A IA está processando a imagem. Isso pode levar até 30 segundos."
+                        }
                       </p>
+                    </div>
+                    {elapsedSeconds >= 60 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleReanalyze}
+                        disabled={isReanalyzing}
+                        className="mt-2"
+                      >
+                        {isReanalyzing ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Tentar Novamente
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Timeout/Error Card */}
+            {exam.status === "pending" && !exam.analysis && (
+              <Card className="bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+                <CardContent className="py-6">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-6 w-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-amber-900 dark:text-amber-100">
+                        Análise não realizada
+                      </h3>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                        A análise de IA não foi concluída. Clique no botão abaixo para iniciar a análise.
+                      </p>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleReanalyze}
+                        disabled={isReanalyzing}
+                        className="mt-3"
+                      >
+                        {isReanalyzing ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Iniciar Análise
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -591,19 +697,19 @@ export default function ExamViewPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg">Análise da IA</CardTitle>
-                  {exam.status !== "approved" && exam.analysis && (
+                  {exam.status !== "approved" && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={handleReanalyze}
-                      disabled={isReanalyzing}
+                      disabled={isReanalyzing || exam.status === "analyzing"}
                     >
                       {isReanalyzing ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       ) : (
                         <RefreshCw className="h-4 w-4 mr-2" />
                       )}
-                      Re-analisar
+                      {exam.analysis ? "Re-analisar" : "Analisar"}
                     </Button>
                   )}
                 </div>
@@ -702,21 +808,18 @@ export default function ExamViewPage() {
                   </Accordion>
                 ) : exam.status === "analyzing" ? (
                   <div className="text-center py-4 text-muted-foreground">
-                    Aguardando conclusão da análise...
+                    <p>Aguardando conclusão da análise...</p>
+                    <p className="text-xs mt-2">
+                      Tempo: {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, '0')}
+                    </p>
                   </div>
                 ) : (
                   <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">Análise em processamento...</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-4"
-                      onClick={fetchExamData}
-                    >
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Atualizar
-                    </Button>
+                    <AlertTriangle className="h-8 w-8 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">Nenhuma análise disponível</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Clique em "Analisar" para iniciar a análise de IA
+                    </p>
                   </div>
                 )}
               </CardContent>
