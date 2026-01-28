@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -23,7 +24,10 @@ import {
   Download,
   ExternalLink,
   Brain,
+  Zap,
+  BarChart3,
 } from "lucide-react";
+import { PromptCorrectionsPanel } from "@/components/admin/PromptCorrectionsPanel";
 import {
   PieChart,
   Pie,
@@ -272,16 +276,34 @@ export default function AiMetricsPage() {
               Métricas de Performance da IA
             </h1>
             <p className="text-muted-foreground mt-1">
-              Acompanhe a qualidade das análises e exporte dados para treinamento
+              Acompanhe a qualidade das análises e gerencie o aprendizado contínuo
             </p>
           </div>
-          <Button onClick={handleExportTrainingData}>
-            <Download className="h-4 w-4 mr-2" />
-            Exportar Dados para Treinamento
-          </Button>
         </div>
 
-        {/* Stats Cards */}
+        {/* Tabs */}
+        <Tabs defaultValue="metrics" className="space-y-6">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="metrics" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Métricas
+            </TabsTrigger>
+            <TabsTrigger value="corrections" className="flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              Correções Dinâmicas
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="metrics" className="space-y-6">
+            {/* Export Button */}
+            <div className="flex justify-end">
+              <Button onClick={handleExportTrainingData}>
+                <Download className="h-4 w-4 mr-2" />
+                Exportar Dados para Treinamento
+              </Button>
+            </div>
+
+            {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4 mb-8">
           {isLoading ? (
             Array.from({ length: 4 }).map((_, i) => (
@@ -535,6 +557,12 @@ export default function AiMetricsPage() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="corrections">
+            <PromptCorrectionsPanel />
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );

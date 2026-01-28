@@ -955,6 +955,156 @@ async function downloadImageAsBase64(imageUrl: string, supabaseClient: any): Pro
   return `data:${contentType};base64,${base64}`;
 }
 
+// ============= SISTEMA DE CORRECOES DINAMICAS =============
+
+interface PromptConfig {
+  config_type: string;
+  content: {
+    target: string;
+    type: string;
+    message: string;
+    suggestion?: string[];
+    criteria?: string[];
+    characteristics?: string[];
+    severity?: string;
+  };
+  priority: number;
+}
+
+/**
+ * Busca configuracoes de prompt ativas para o tipo de exame
+ */
+async function fetchPromptConfigs(
+  supabaseClient: any,
+  examType: string
+): Promise<PromptConfig[]> {
+  try {
+    const { data, error } = await supabaseClient
+      .rpc('get_active_prompt_configs', { p_exam_type: examType });
+
+    if (error) {
+      console.error('[analyze-image] Error fetching prompt configs:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error('[analyze-image] Exception fetching prompt configs:', err);
+    return [];
+  }
+}
+
+/**
+ * Aplica correcoes dinamicas ao prompt base
+ */
+function applyDynamicCorrections(
+  basePrompt: string,
+  configs: PromptConfig[]
+): string {
+  if (!configs || configs.length === 0) {
+    return basePrompt;
+  }
+
+  // Separar por tipo de configuracao
+  const corrections = configs.filter(c => c.config_type === 'correction');
+  const exclusions = configs.filter(c => c.config_type === 'exclusion');
+  const emphases = configs.filter(c => c.config_type === 'emphasis');
+
+  const sections: string[] = [];
+
+  // Secao de correcoes (diagnosticos perdidos)
+  if (corrections.length > 0) {
+    sections.push('## CORRECOES BASEADAS EM FEEDBACK MEDICO\n');
+    sections.push('As seguintes observacoes sao baseadas em feedback de medicos especialistas:\n');
+
+    corrections.forEach((c, i) => {
+      sections.push(`${i + 1}. ${c.content.message}`);
+      if (c.content.suggestion && c.content.suggestion.length > 0) {
+        sections.push('   Sinais a observar:');
+        c.content.suggestion.forEach(s => sections.push(`   - ${s}`));
+      }
+      sections.push('');
+    });
+  }
+
+  // Secao de exclusoes (falsos positivos)
+  if (exclusions.length > 0) {
+    sections.push('## ALERTAS DE FALSOS POSITIVOS\n');
+    sections.push('Os seguintes diagnosticos tem gerado falsos positivos frequentes:\n');
+
+    exclusions.forEach((c, i) => {
+      sections.push(`${i + 1}. ${c.content.message}`);
+      if (c.content.criteria && c.content.criteria.length > 0) {
+        sections.push('   Criterios obrigatorios:');
+        c.content.criteria.forEach(cr => sections.push(`   - ${cr}`));
+      }
+      sections.push('');
+    });
+  }
+
+  // Secao de enfases (biomarcadores)
+  if (emphases.length > 0) {
+    sections.push('## BIOMARCADORES COM ATENCAO ESPECIAL\n');
+
+    emphases.forEach((c, i) => {
+      sections.push(`${i + 1}. ${c.content.message}`);
+      if (c.content.characteristics && c.content.characteristics.length > 0) {
+        sections.push('   Caracteristicas:');
+        c.content.characteristics.forEach(ch => sections.push(`   - ${ch}`));
+      }
+      sections.push('');
+    });
+  }
+
+  // Se nao houver correcoes, retorna prompt original
+  if (sections.length === 0) {
+    return basePrompt;
+  }
+
+  // Inserir correcoes antes da secao "IMPORTANTE"
+  const correctionBlock = sections.join('\n');
+
+  if (basePrompt.includes('IMPORTANTE:')) {
+    return basePrompt.replace(
+      'IMPORTANTE:',
+      `${correctionBlock}\nIMPORTANTE:`
+    );
+  }
+
+  // Se nao encontrar "IMPORTANTE:", adiciona no final
+  return `${basePrompt}\n\n${correctionBlock}`;
+}
+
+/**
+ * Obtem prompt completo com correcoes dinamicas aplicadas
+ */
+async function getDynamicPrompt(
+  supabaseClient: any,
+  examType: string,
+  isBilateral: boolean
+): Promise<{ prompt: string; correctionsApplied: number }> {
+  // Obter prompt base
+  const basePrompt = getPromptForExamType(examType, isBilateral);
+
+  // Buscar configuracoes dinamicas
+  const configs = await fetchPromptConfigs(supabaseClient, examType);
+
+  if (configs.length === 0) {
+    console.log('[analyze-image] No dynamic corrections found for', examType);
+    return { prompt: basePrompt, correctionsApplied: 0 };
+  }
+
+  console.log('[analyze-image] Applying', configs.length, 'dynamic corrections for', examType);
+
+  // Aplicar correcoes
+  const enhancedPrompt = applyDynamicCorrections(basePrompt, configs);
+
+  return {
+    prompt: enhancedPrompt,
+    correctionsApplied: configs.length
+  };
+}
+
 // ============= HANDLER PRINCIPAL =============
 
 serve(async (req) => {
@@ -1103,9 +1253,13 @@ serve(async (req) => {
       );
     }
 
-    // Get the appropriate prompt
-    const prompt = getPromptForExamType(exam.exam_type, isBilateral);
-    console.log('[analyze-image] Using prompt for:', exam.exam_type, 'bilateral:', isBilateral);
+    // Get the appropriate prompt with dynamic corrections
+    const { prompt, correctionsApplied } = await getDynamicPrompt(
+      serviceClient,
+      exam.exam_type,
+      isBilateral
+    );
+    console.log('[analyze-image] Using prompt for:', exam.exam_type, 'bilateral:', isBilateral, 'corrections:', correctionsApplied);
 
     // Call Lovable AI Gateway
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -1217,7 +1371,13 @@ serve(async (req) => {
         diagnosis: mappedData.diagnosis,
         recommendations: mappedData.recommendations,
         risk_classification: mappedData.risk_classification,
-        raw_response: parsedResponse,
+        raw_response: {
+          ...parsedResponse,
+          _metadata: {
+            corrections_applied: correctionsApplied,
+            analyzed_at: new Date().toISOString()
+          }
+        },
         model_used: 'google/gemini-2.5-pro',
       })
       .select()
