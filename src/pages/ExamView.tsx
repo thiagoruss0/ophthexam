@@ -593,13 +593,26 @@ export default function ExamViewPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="relative overflow-auto bg-muted rounded-lg" style={{ maxHeight: "400px" }}>
+              <div 
+                className="relative bg-muted rounded-lg flex items-center justify-center"
+                style={{ 
+                  height: "calc(60vh - 100px)",
+                  minHeight: "300px",
+                  maxHeight: "500px",
+                  overflow: zoom > 100 ? "auto" : "hidden"
+                }}
+              >
                 {exam.images[selectedImageIndex] ? (
                   <img
                     src={exam.images[selectedImageIndex].image_url}
                     alt="Exam"
-                    style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top left" }}
-                    className="transition-transform"
+                    style={{ 
+                      maxWidth: zoom === 100 ? "100%" : `${zoom}%`,
+                      maxHeight: zoom === 100 ? "100%" : `${zoom}%`,
+                      objectFit: "contain",
+                      transition: "all 0.2s ease"
+                    }}
+                    className="rounded"
                   />
                 ) : (
                   <div className="h-64 flex items-center justify-center text-muted-foreground">
