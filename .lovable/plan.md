@@ -1,20 +1,20 @@
 
 
-## Plano: Reorganizar Layout da Página de Visualização de Exame
+## Plano: Ajustar Imagem para Caber na Viewport
 
 ### Problema Identificado
-A página de visualização do exame (`/exame/:id`) atualmente exibe a imagem e a análise da IA **lado a lado** em um grid de 5 colunas (3 + 2). Para exames bilaterais, isso resulta em:
-- Dois cards (OD e OE) comprimidos em espaço muito pequeno
-- Texto cortado e desalinhado dentro dos boxes
-- Layout visualmente confuso como mostrado na screenshot
+Atualmente a imagem do exame está com:
+- `maxHeight: 400px` fixo no container
+- `overflow: auto` que força rolagem
+- Zoom aplicado com `transformOrigin: "top left"` que expande a imagem para fora do container
+
+Isso resulta em uma imagem que precisa de scroll para ser visualizada por inteiro, especialmente em imagens de relatórios bilaterais que são mais altas.
 
 ### Solução Proposta
-Alterar o layout para **empilhar verticalmente**:
-1. **Imagem do exame** em largura total (100%)
-2. **Análise da IA** abaixo da imagem, também em largura total
-3. **Observações do médico** na sequência
-
-Isso permitirá que os cards bilaterais (OD e OE) tenham mais espaço horizontal, corrigindo o desalinhamento.
+Alterar o comportamento da imagem para que ela:
+1. **Caiba completamente na janela** sem necessidade de rolagem
+2. **Mantenha a definição** usando `object-fit: contain`
+3. **Preserve a funcionalidade de zoom** permitindo aumentar quando necessário
 
 ---
 
@@ -22,74 +22,77 @@ Isso permitirá que os cards bilaterais (OD e OE) tenham mais espaço horizontal
 
 #### Arquivo: `src/pages/ExamView.tsx`
 
-**Modificação 1** - Alterar a estrutura do grid principal (linha ~567):
+**Modificação no Container da Imagem (linha ~596-609)**
 
 De:
 ```tsx
-<div className="grid gap-6 lg:grid-cols-5">
-  {/* Image Section */}
-  <div className="lg:col-span-3 space-y-4">
+<div className="relative overflow-auto bg-muted rounded-lg" style={{ maxHeight: "400px" }}>
+  {exam.images[selectedImageIndex] ? (
+    <img
+      src={exam.images[selectedImageIndex].image_url}
+      alt="Exam"
+      style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top left" }}
+      className="transition-transform"
+    />
+  ) : (
     ...
-  </div>
-  {/* Analysis Section */}
-  <div className="lg:col-span-2 space-y-4">
-    ...
-  </div>
+  )}
 </div>
 ```
 
 Para:
 ```tsx
-<div className="space-y-6">
-  {/* Image Section - Full Width */}
-  <div className="space-y-4">
-    <Card>
-      ...imagem com altura máxima ajustada...
-    </Card>
-  </div>
-  
-  {/* Analysis Section - Full Width Below Image */}
-  <div className="space-y-4">
-    ...cards de análise...
-  </div>
+<div 
+  className="relative bg-muted rounded-lg flex items-center justify-center"
+  style={{ 
+    height: "calc(60vh - 100px)",  // Altura baseada na viewport
+    minHeight: "300px",
+    maxHeight: "500px",
+    overflow: zoom > 100 ? "auto" : "hidden"  // Scroll apenas quando zoom > 100%
+  }}
+>
+  {exam.images[selectedImageIndex] ? (
+    <img
+      src={exam.images[selectedImageIndex].image_url}
+      alt="Exam"
+      style={{ 
+        maxWidth: zoom === 100 ? "100%" : `${zoom}%`,
+        maxHeight: zoom === 100 ? "100%" : `${zoom}%`,
+        objectFit: "contain",  // Mantém proporção e definição
+        transition: "all 0.2s ease"
+      }}
+      className="rounded"
+    />
+  ) : (
+    ...
+  )}
 </div>
 ```
 
-**Modificação 2** - Ajustar altura máxima da imagem:
-- Reduzir `maxHeight` de `500px` para `400px` para economizar espaço vertical
-- A imagem permanecerá com zoom funcional
-
-**Modificação 3** - Layout responsivo para observações do médico:
-- Em telas grandes, colocar os botões de ação lado a lado
-- Manter o comportamento empilhado em mobile
-
 ---
 
-### Resultado Esperado
+### Comportamento Esperado
+
+1. **Zoom 100% (padrão)**: A imagem se ajusta automaticamente ao container, exibindo-se por inteiro sem rolagem
+2. **Zoom > 100%**: A imagem aumenta e aparece scrollbar para navegar
+3. **Zoom < 100%**: A imagem diminui proporcionalmente
 
 ```text
 +------------------------------------------+
-|           Imagem do Exame (100%)         |
-|  [zoom controls]   [image preview]       |
-+------------------------------------------+
-
-+------------------------------------------+
-|           Análise da IA (100%)           |
-| +-----------------+ +-----------------+  |
-| | Olho Direito    | | Olho Esquerdo   |  |
-| | (OD)            | | (OE)            |  |
-| | - Interface...  | | - Interface...  |  |
-| | - Depressão...  | | - Depressão...  |  |
-| +-----------------+ +-----------------+  |
-| [Comparação Bilateral]                   |
-| [Diagnóstico] [Recomendações]            |
-+------------------------------------------+
-
-+------------------------------------------+
-|        Observações do Médico             |
-|  [Textarea] [Salvar] [Aprovar]           |
+|           Imagem do Exame                |
+|  [zoom controls]           [-] 100% [+]  |
+| +--------------------------------------+ |
+| |                                      | |
+| |   [Imagem ajustada ao container]     | |
+| |   (sem necessidade de scroll)        | |
+| |                                      | |
+| +--------------------------------------+ |
 +------------------------------------------+
 ```
 
-Os cards OD e OE terão aproximadamente o dobro do espaço horizontal atual, permitindo que o conteúdo seja exibido corretamente sem cortes ou desalinhamentos.
+### Vantagens
+- Imagem visível por inteiro ao carregar a página
+- Mantém definição usando `object-fit: contain`
+- Altura responsiva baseada na viewport (`60vh`)
+- Funcionalidade de zoom preservada para análise detalhada
 
