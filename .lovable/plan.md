@@ -1,158 +1,95 @@
 
 
-# Plano: Corrigir Busca de Análise Mais Recente
+## Plano: Reorganizar Layout da Página de Visualização de Exame
 
-## Problema Identificado
+### Problema Identificado
+A página de visualização do exame (`/exame/:id`) atualmente exibe a imagem e a análise da IA **lado a lado** em um grid de 5 colunas (3 + 2). Para exames bilaterais, isso resulta em:
+- Dois cards (OD e OE) comprimidos em espaço muito pequeno
+- Texto cortado e desalinhado dentro dos boxes
+- Layout visualmente confuso como mostrado na screenshot
 
-Existem **múltiplas análises** para o mesmo exame no banco de dados (3 no caso atual):
+### Solução Proposta
+Alterar o layout para **empilhar verticalmente**:
+1. **Imagem do exame** em largura total (100%)
+2. **Análise da IA** abaixo da imagem, também em largura total
+3. **Observações do médico** na sequência
 
-1. `0fde75d3...` - análise antiga, **sem flag bilateral**
-2. `72f4dd68...` - análise nova, **com bilateral: true**  
-3. `4b2067e0...` - análise nova, **com bilateral: true**
-
-O código em `ExamView.tsx` linha 142 pega o **primeiro elemento do array** sem ordenação:
-
-```typescript
-analysis: (data.ai_analysis as any[])?.[0],
-```
-
-O Supabase não garante ordem específica quando não há `ORDER BY`, então pode retornar a análise mais antiga (sem bilateral), causando a exibição incorreta.
+Isso permitirá que os cards bilaterais (OD e OE) tenham mais espaço horizontal, corrigindo o desalinhamento.
 
 ---
 
-## Solução
+### Alterações Técnicas
 
-### 1. Modificar a Query para Ordenar por Data
+#### Arquivo: `src/pages/ExamView.tsx`
 
-Atualizar a query em `fetchExamData()` para ordenar as análises pela data de criação mais recente:
+**Modificação 1** - Alterar a estrutura do grid principal (linha ~567):
 
-**Arquivo:** `src/pages/ExamView.tsx`
-
-```typescript
-// Antes (linha 113):
-ai_analysis (...)
-
-// Depois:
-ai_analysis!inner (...)
-// E usar order ou filtrar apenas a última
+De:
+```tsx
+<div className="grid gap-6 lg:grid-cols-5">
+  {/* Image Section */}
+  <div className="lg:col-span-3 space-y-4">
+    ...
+  </div>
+  {/* Analysis Section */}
+  <div className="lg:col-span-2 space-y-4">
+    ...
+  </div>
+</div>
 ```
 
-**Problema:** O Supabase não permite `ORDER BY` dentro de sub-relacionamentos na mesma query.
-
-### 2. Solução Alternativa: Query Separada
-
-Buscar a análise mais recente em uma query separada:
-
-```typescript
-// Após buscar o exame:
-const { data: analysisData } = await supabase
-  .from('ai_analysis')
-  .select('*')
-  .eq('exam_id', id)
-  .order('id', { ascending: false }) // UUIDs v4 não são ordenados, usar created_at se disponível
-  .limit(1)
-  .single();
+Para:
+```tsx
+<div className="space-y-6">
+  {/* Image Section - Full Width */}
+  <div className="space-y-4">
+    <Card>
+      ...imagem com altura máxima ajustada...
+    </Card>
+  </div>
+  
+  {/* Analysis Section - Full Width Below Image */}
+  <div className="space-y-4">
+    ...cards de análise...
+  </div>
+</div>
 ```
 
-**Nota:** Se a tabela `ai_analysis` não tem `created_at`, podemos:
-- A. Usar a ordem de inserção via ID (menos confiável)
-- B. Adicionar coluna `created_at` (ideal)
+**Modificação 2** - Ajustar altura máxima da imagem:
+- Reduzir `maxHeight` de `500px` para `400px` para economizar espaço vertical
+- A imagem permanecerá com zoom funcional
 
-### 3. Verificar se `ai_analysis` tem `created_at`
-
-Se não tiver, adicionar via migração.
+**Modificação 3** - Layout responsivo para observações do médico:
+- Em telas grandes, colocar os botões de ação lado a lado
+- Manter o comportamento empilhado em mobile
 
 ---
 
-## Implementação Recomendada
-
-### Passo 1: Adicionar `created_at` à tabela `ai_analysis` (se não existir)
-
-```sql
-ALTER TABLE public.ai_analysis 
-ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
-```
-
-### Passo 2: Modificar `fetchExamData()` em `ExamView.tsx`
-
-```typescript
-// Buscar análise mais recente separadamente
-const { data: latestAnalysis } = await supabase
-  .from('ai_analysis')
-  .select(`
-    id,
-    quality_score,
-    findings,
-    biomarkers,
-    measurements,
-    diagnosis,
-    recommendations,
-    risk_classification
-  `)
-  .eq('exam_id', id)
-  .order('created_at', { ascending: false })
-  .limit(1)
-  .maybeSingle();
-
-// Usar esta análise em vez de [0] do array
-```
-
-### Passo 3: Limpar Análises Antigas ao Re-analisar
-
-Modificar `handleReanalyze()` para deletar **todas** as análises anteriores:
-
-```typescript
-// Antes:
-if (exam.analysis?.id) {
-  await supabase.from("ai_analysis").delete().eq("id", exam.analysis.id);
-}
-
-// Depois:
-await supabase.from("ai_analysis").delete().eq("exam_id", exam.id);
-```
-
-Isso garante que não fiquem análises órfãs.
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Modificação |
-|---------|-------------|
-| Migração SQL | Adicionar `created_at` se não existir |
-| `src/pages/ExamView.tsx` | Buscar análise mais recente, limpar todas ao re-analisar |
-
----
-
-## Fluxo Corrigido
+### Resultado Esperado
 
 ```text
-1. Exame tem múltiplas análises
-   |
-   v
-2. Query ordena por created_at DESC
-   |
-   v
-3. Pega análise mais recente (com bilateral)
-   |
-   v
-4. Exibe corretamente OD e OE separados
++------------------------------------------+
+|           Imagem do Exame (100%)         |
+|  [zoom controls]   [image preview]       |
++------------------------------------------+
+
++------------------------------------------+
+|           Análise da IA (100%)           |
+| +-----------------+ +-----------------+  |
+| | Olho Direito    | | Olho Esquerdo   |  |
+| | (OD)            | | (OE)            |  |
+| | - Interface...  | | - Interface...  |  |
+| | - Depressão...  | | - Depressão...  |  |
+| +-----------------+ +-----------------+  |
+| [Comparação Bilateral]                   |
+| [Diagnóstico] [Recomendações]            |
++------------------------------------------+
+
++------------------------------------------+
+|        Observações do Médico             |
+|  [Textarea] [Salvar] [Aprovar]           |
++------------------------------------------+
 ```
 
----
-
-## Benefícios
-
-1. **Sempre usa análise mais recente:** Nunca pega análise antiga
-2. **Limpa análises órfãs:** Re-análise remove todas as anteriores
-3. **Auditoria:** `created_at` permite rastrear quando cada análise foi criada
-4. **Performance:** Query simples com `LIMIT 1`
-
----
-
-## Considerações
-
-- A adição de `created_at` não afeta análises existentes (terão valor `now()` após migração)
-- Análises existentes podem ser limpas manualmente se desejado
-- A mudança é retrocompatível
+Os cards OD e OE terão aproximadamente o dobro do espaço horizontal atual, permitindo que o conteúdo seja exibido corretamente sem cortes ou desalinhamentos.
 
