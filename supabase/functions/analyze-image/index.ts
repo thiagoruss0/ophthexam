@@ -1444,6 +1444,24 @@ serve(async (req) => {
     const userId = claimsData.claims.sub;
     console.log('[analyze-image] User authenticated:', userId);
 
+    // Get the user's profile ID to verify exam ownership
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+
+    if (profileError || !profileData) {
+      console.error('[analyze-image] Profile not found:', profileError);
+      return new Response(
+        JSON.stringify({ error: 'Perfil não encontrado' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const profileId = profileData.id;
+    console.log('[analyze-image] User profile ID:', profileId);
+
     // Parse request body
     const { exam_id } = await req.json();
     
@@ -1456,17 +1474,18 @@ serve(async (req) => {
 
     console.log('[analyze-image] Processing exam:', exam_id);
 
-    // Fetch exam data
+    // Fetch exam data - SECURITY: Verify the user owns this exam via doctor_id
     const { data: exam, error: examError } = await supabase
       .from('exams')
       .select('*, patients(name)')
       .eq('id', exam_id)
+      .eq('doctor_id', profileId)
       .single();
 
     if (examError || !exam) {
-      console.error('[analyze-image] Exam not found:', examError);
+      console.error('[analyze-image] Exam not found or unauthorized:', examError);
       return new Response(
-        JSON.stringify({ error: 'Exame não encontrado' }),
+        JSON.stringify({ error: 'Exame não encontrado ou acesso não autorizado' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
