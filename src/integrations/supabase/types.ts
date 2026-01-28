@@ -167,6 +167,63 @@ export type Database = {
           },
         ]
       }
+      ai_metrics_snapshot: {
+        Row: {
+          avg_rating: number | null
+          common_validation_warnings: Json | null
+          correct_rate: number | null
+          created_at: string
+          id: string
+          incorrect_rate: number | null
+          metrics_by_exam_type: Json | null
+          partial_rate: number | null
+          reference_cases_count: number
+          snapshot_date: string
+          top_added_diagnoses: Json | null
+          top_pathology_tags: Json | null
+          top_removed_diagnoses: Json | null
+          total_analyses: number
+          total_feedbacks: number
+          validation_success_rate: number | null
+        }
+        Insert: {
+          avg_rating?: number | null
+          common_validation_warnings?: Json | null
+          correct_rate?: number | null
+          created_at?: string
+          id?: string
+          incorrect_rate?: number | null
+          metrics_by_exam_type?: Json | null
+          partial_rate?: number | null
+          reference_cases_count?: number
+          snapshot_date?: string
+          top_added_diagnoses?: Json | null
+          top_pathology_tags?: Json | null
+          top_removed_diagnoses?: Json | null
+          total_analyses?: number
+          total_feedbacks?: number
+          validation_success_rate?: number | null
+        }
+        Update: {
+          avg_rating?: number | null
+          common_validation_warnings?: Json | null
+          correct_rate?: number | null
+          created_at?: string
+          id?: string
+          incorrect_rate?: number | null
+          metrics_by_exam_type?: Json | null
+          partial_rate?: number | null
+          reference_cases_count?: number
+          snapshot_date?: string
+          top_added_diagnoses?: Json | null
+          top_pathology_tags?: Json | null
+          top_removed_diagnoses?: Json | null
+          total_analyses?: number
+          total_feedbacks?: number
+          validation_success_rate?: number | null
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action: string
@@ -564,6 +621,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_ai_metrics_snapshot: { Args: never; Returns: undefined }
       cleanup_stuck_analyzing_exams: {
         Args: never
         Returns: {
@@ -574,6 +632,43 @@ export type Database = {
       count_exams_without_feedback: {
         Args: { doctor_profile_id: string }
         Returns: number
+      }
+      get_ai_metrics_trend: {
+        Args: { days_back?: number }
+        Returns: {
+          avg_rating: number
+          correct_rate: number
+          reference_cases_count: number
+          snapshot_date: string
+          total_feedbacks: number
+        }[]
+      }
+      get_latest_ai_metrics: {
+        Args: never
+        Returns: {
+          avg_rating: number | null
+          common_validation_warnings: Json | null
+          correct_rate: number | null
+          created_at: string
+          id: string
+          incorrect_rate: number | null
+          metrics_by_exam_type: Json | null
+          partial_rate: number | null
+          reference_cases_count: number
+          snapshot_date: string
+          top_added_diagnoses: Json | null
+          top_pathology_tags: Json | null
+          top_removed_diagnoses: Json | null
+          total_analyses: number
+          total_feedbacks: number
+          validation_success_rate: number | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "ai_metrics_snapshot"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       get_profile_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
