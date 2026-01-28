@@ -1,10 +1,456 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// ============= ZOD VALIDATION SCHEMAS =============
+
+// Common schemas
+const QualityScoreSchema = z.enum(["boa", "moderada", "ruim"]).optional();
+const LayerStatusSchema = z.enum(["normal", "alterada", "alterado", "ausente"]).optional();
+const SeveritySchema = z.enum(["leve", "moderado", "moderada", "severo", "severa"]).optional();
+
+const QualityAssessmentSchema = z.object({
+  score: QualityScoreSchema,
+  issues: z.array(z.string()).optional().default([]),
+  centered: z.boolean().optional(),
+  signal_strength: z.number().nullable().optional(),
+}).passthrough();
+
+const LayerAnalysisSchema = z.object({
+  status: LayerStatusSchema,
+  description: z.string().optional().default(""),
+}).passthrough();
+
+const MeasurementValueSchema = z.object({
+  value: z.number().nullable().optional(),
+  unit: z.string().optional().default("μm"),
+  classification: z.string().optional(),
+}).passthrough();
+
+const BiomarkerPresenceSchema = z.object({
+  present: z.boolean().optional(),
+  location: z.string().optional().default(""),
+  severity: SeveritySchema,
+}).passthrough();
+
+const DiagnosisSchema = z.object({
+  primary: z.string().optional().default(""),
+  secondary: z.array(z.string()).optional().default([]),
+  differential: z.array(z.string()).optional().default([]),
+  staging: z.string().optional(),
+}).passthrough();
+
+// OCT Macular schemas
+const OctMacularLayersSchema = z.object({
+  vitreoretinal_interface: LayerAnalysisSchema.optional(),
+  mli: LayerAnalysisSchema.optional(),
+  cfnr: LayerAnalysisSchema.optional(),
+  ccg: LayerAnalysisSchema.optional(),
+  cpi: LayerAnalysisSchema.optional(),
+  cni: LayerAnalysisSchema.optional(),
+  cpe: LayerAnalysisSchema.optional(),
+  cne: LayerAnalysisSchema.optional(),
+  zona_elipsoide: LayerAnalysisSchema.optional(),
+  epr: LayerAnalysisSchema.optional(),
+  membrana_bruch: LayerAnalysisSchema.optional(),
+  coroide: LayerAnalysisSchema.optional(),
+}).passthrough();
+
+const OctMacularBiomarkersSchema = z.object({
+  fluido_intraretiniano: BiomarkerPresenceSchema.optional(),
+  fluido_subretiniano: BiomarkerPresenceSchema.optional(),
+  dep: z.object({
+    present: z.boolean().optional(),
+    type: z.string().optional(),
+    height: z.string().optional(),
+  }).passthrough().optional(),
+  drusas: z.object({
+    present: z.boolean().optional(),
+    size: z.string().optional(),
+    type: z.string().optional(),
+    location: z.string().optional(),
+  }).passthrough().optional(),
+  atrofia_epr: BiomarkerPresenceSchema.optional(),
+  membrana_epirretiniana: z.object({
+    present: z.boolean().optional(),
+    severity: SeveritySchema,
+    traction: z.boolean().optional(),
+  }).passthrough().optional(),
+  tracao_vitreomacular: z.object({
+    present: z.boolean().optional(),
+    type: z.string().optional(),
+    width: z.string().optional(),
+  }).passthrough().optional(),
+  buraco_macular: z.object({
+    present: z.boolean().optional(),
+    stage: z.string().optional(),
+    size: z.string().optional(),
+  }).passthrough().optional(),
+  edema_macular: z.object({
+    present: z.boolean().optional(),
+    type: z.string().optional(),
+    severity: SeveritySchema,
+  }).passthrough().optional(),
+  material_hiperreflectivo: BiomarkerPresenceSchema.optional(),
+  pontos_hiperreflectivos: z.object({
+    present: z.boolean().optional(),
+    quantity: z.string().optional(),
+  }).passthrough().optional(),
+  atrofia_externa: BiomarkerPresenceSchema.optional(),
+  desorganizacao_camadas: BiomarkerPresenceSchema.optional(),
+}).passthrough();
+
+const OctMacularMeasurementsSchema = z.object({
+  central_foveal_thickness: MeasurementValueSchema.optional(),
+  subfoveal_choroidal_thickness: MeasurementValueSchema.optional(),
+  subretinal_fluid_height: MeasurementValueSchema.optional(),
+  dep_height: MeasurementValueSchema.optional(),
+}).passthrough();
+
+const OctMacularEyeDataSchema = z.object({
+  quality: QualityAssessmentSchema.optional(),
+  layers: OctMacularLayersSchema.optional(),
+  foveal_depression: LayerAnalysisSchema.optional(),
+  retinal_surface: LayerAnalysisSchema.optional(),
+  inner_layers: LayerAnalysisSchema.optional(),
+  outer_layers: LayerAnalysisSchema.optional(),
+  rpe_choroid_complex: LayerAnalysisSchema.optional(),
+  biomarkers: OctMacularBiomarkersSchema.optional(),
+  measurements: OctMacularMeasurementsSchema.optional(),
+  clinical_notes: z.string().optional().default(""),
+}).passthrough();
+
+// OCT Nerve schemas
+const RnflSectorSchema = z.object({
+  value: z.number().nullable().optional(),
+  unit: z.string().optional().default("μm"),
+  classification: z.enum(["normal", "borderline", "anormal"]).optional(),
+}).passthrough();
+
+const RnflAnalysisSchema = z.object({
+  average: RnflSectorSchema.optional(),
+  superior: RnflSectorSchema.optional(),
+  inferior: RnflSectorSchema.optional(),
+  nasal: RnflSectorSchema.optional(),
+  temporal: RnflSectorSchema.optional(),
+  symmetry: z.object({
+    value: z.number().nullable().optional(),
+    unit: z.string().optional(),
+    classification: z.string().optional(),
+  }).passthrough().optional(),
+  thinning_location: z.array(z.string()).optional().default([]),
+  defect_pattern: z.enum(["difuso", "localizado", "cunha", "nenhum"]).optional(),
+}).passthrough();
+
+const OpticDiscAnalysisSchema = z.object({
+  disc_area: MeasurementValueSchema.optional(),
+  cup_area: MeasurementValueSchema.optional(),
+  rim_area: MeasurementValueSchema.optional(),
+  cd_ratio_average: z.object({
+    value: z.number().nullable().optional(),
+    classification: z.string().optional(),
+  }).passthrough().optional(),
+  cd_ratio_vertical: z.object({
+    value: z.number().nullable().optional(),
+    classification: z.string().optional(),
+  }).passthrough().optional(),
+  isnt_rule: z.object({
+    preserved: z.boolean().optional(),
+    violated_sectors: z.array(z.string()).optional().default([]),
+  }).passthrough().optional(),
+  notch: BiomarkerPresenceSchema.optional(),
+  disc_hemorrhage: BiomarkerPresenceSchema.optional(),
+  peripapillary_atrophy: z.object({
+    present: z.boolean().optional(),
+    type: z.string().optional(),
+    extent: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+const GlaucomaBiomarkersSchema = z.object({
+  rnfl_wedge_defect: BiomarkerPresenceSchema.optional(),
+  rnfl_focal_thinning: BiomarkerPresenceSchema.optional(),
+  rim_thinning: BiomarkerPresenceSchema.optional(),
+  rim_notch: BiomarkerPresenceSchema.optional(),
+  disc_hemorrhage: BiomarkerPresenceSchema.optional(),
+}).passthrough();
+
+const OctNerveEyeDataSchema = z.object({
+  quality: QualityAssessmentSchema.optional(),
+  rnfl: RnflAnalysisSchema.optional(),
+  optic_disc: OpticDiscAnalysisSchema.optional(),
+  biomarkers_glaucoma: GlaucomaBiomarkersSchema.optional(),
+  ganglion_cell_analysis: z.any().optional(),
+  clinical_notes: z.string().optional().default(""),
+}).passthrough();
+
+// Retinography schemas
+const RetinographyOpticDiscSchema = z.object({
+  appearance: z.string().optional(),
+  color: z.string().optional(),
+  margins: z.string().optional(),
+  cd_ratio: z.number().nullable().optional(),
+  neuroretinal_rim: z.string().optional(),
+  excavation: z.string().optional(),
+  peripapillary_changes: z.string().optional(),
+  description: z.string().optional(),
+}).passthrough();
+
+const RetinographyMaculaSchema = z.object({
+  appearance: z.string().optional(),
+  foveal_reflex: z.string().optional(),
+  pigment_changes: z.boolean().optional(),
+  exudates: z.boolean().optional(),
+  hemorrhages: z.boolean().optional(),
+  edema_signs: z.boolean().optional(),
+  drusen: z.boolean().optional(),
+  description: z.string().optional(),
+}).passthrough();
+
+const RetinographyVesselsSchema = z.object({
+  arteries: z.any().optional(),
+  veins: z.any().optional(),
+  av_ratio: z.string().optional(),
+  av_crossing: z.string().optional(),
+  neovasos: z.boolean().optional(),
+  description: z.string().optional(),
+}).passthrough();
+
+const RetinographyRetinaGeneralSchema = z.object({
+  hemorrhages: z.any().optional(),
+  exudates: z.any().optional(),
+  microaneurysms: z.any().optional(),
+  cotton_wool_spots: z.any().optional(),
+  pigment_changes: z.any().optional(),
+  atrophy: z.any().optional(),
+  detachment_signs: z.any().optional(),
+  description: z.string().optional(),
+}).passthrough();
+
+const RetinographyEyeDataSchema = z.object({
+  quality: QualityAssessmentSchema.optional(),
+  optic_disc: RetinographyOpticDiscSchema.optional(),
+  macula: RetinographyMaculaSchema.optional(),
+  vessels: RetinographyVesselsSchema.optional(),
+  retina_general: RetinographyRetinaGeneralSchema.optional(),
+  clinical_notes: z.string().optional().default(""),
+}).passthrough();
+
+// Comparison schema
+const ComparisonSchema = z.object({
+  symmetry: z.enum(["simetrico", "assimetrico"]).optional(),
+  asymmetry_details: z.string().optional(),
+  notes: z.string().optional(),
+  od_oe_asymmetry: z.any().optional(),
+  rnfl_asymmetry_percentage: z.number().nullable().optional(),
+  significant_differences: z.array(z.string()).optional(),
+}).passthrough();
+
+// Risk classification
+const RiskClassificationSchema = z.object({
+  glaucoma_risk: z.enum(["baixo", "moderado", "alto"]).optional(),
+  progression_risk: z.enum(["baixo", "moderado", "alto"]).optional(),
+  justification: z.string().optional(),
+}).passthrough();
+
+// Unified bilateral response schema
+const BilateralResponseSchema = z.object({
+  bilateral: z.literal(true),
+  od: z.any(),
+  oe: z.any(),
+  comparison: ComparisonSchema.optional(),
+  diagnosis: DiagnosisSchema.optional(),
+  recommendations: z.array(z.string()).optional().default([]),
+  overall_clinical_notes: z.string().optional(),
+  risk_classification: RiskClassificationSchema.optional(),
+  classifications: z.any().optional(),
+  urgency: z.any().optional(),
+}).passthrough();
+
+// Single eye response schema (fallback)
+const SingleEyeResponseSchema = z.object({
+  quality: QualityAssessmentSchema.optional(),
+  diagnosis: DiagnosisSchema.optional(),
+  recommendations: z.array(z.string()).optional().default([]),
+  clinical_notes: z.string().optional(),
+}).passthrough();
+
+// ============= VALIDATION HELPERS =============
+
+interface ValidationResult {
+  isValid: boolean;
+  data: any;
+  warnings: string[];
+  errors: string[];
+}
+
+function formatZodError(error: z.ZodError): string {
+  return error.issues
+    .slice(0, 5)
+    .map((issue) => `[${issue.path.join(".")}]: ${issue.message}`)
+    .join("; ");
+}
+
+function validateAiResponse(examType: string, response: any, isBilateral: boolean): ValidationResult {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  
+  console.log('[analyze-image] Validating AI response for:', examType, 'bilateral:', isBilateral);
+  
+  try {
+    if (isBilateral && response.bilateral === true) {
+      // Validate bilateral structure
+      const bilateralResult = BilateralResponseSchema.safeParse(response);
+      if (!bilateralResult.success) {
+        warnings.push(`Bilateral structure validation: ${formatZodError(bilateralResult.error)}`);
+      }
+      
+      // Validate eye-specific data based on exam type
+      switch (examType) {
+        case 'oct_macular':
+          if (response.od) {
+            const odResult = OctMacularEyeDataSchema.safeParse(response.od);
+            if (!odResult.success) {
+              warnings.push(`OD data validation: ${formatZodError(odResult.error)}`);
+            }
+          }
+          if (response.oe) {
+            const oeResult = OctMacularEyeDataSchema.safeParse(response.oe);
+            if (!oeResult.success) {
+              warnings.push(`OE data validation: ${formatZodError(oeResult.error)}`);
+            }
+          }
+          break;
+          
+        case 'oct_nerve':
+          if (response.od) {
+            const odResult = OctNerveEyeDataSchema.safeParse(response.od);
+            if (!odResult.success) {
+              warnings.push(`OD nerve data validation: ${formatZodError(odResult.error)}`);
+            }
+          }
+          if (response.oe) {
+            const oeResult = OctNerveEyeDataSchema.safeParse(response.oe);
+            if (!oeResult.success) {
+              warnings.push(`OE nerve data validation: ${formatZodError(oeResult.error)}`);
+            }
+          }
+          break;
+          
+        case 'retinography':
+          if (response.od) {
+            const odResult = RetinographyEyeDataSchema.safeParse(response.od);
+            if (!odResult.success) {
+              warnings.push(`OD retinography validation: ${formatZodError(odResult.error)}`);
+            }
+          }
+          if (response.oe) {
+            const oeResult = RetinographyEyeDataSchema.safeParse(response.oe);
+            if (!oeResult.success) {
+              warnings.push(`OE retinography validation: ${formatZodError(oeResult.error)}`);
+            }
+          }
+          break;
+      }
+    } else {
+      // Validate single eye response
+      const singleResult = SingleEyeResponseSchema.safeParse(response);
+      if (!singleResult.success) {
+        warnings.push(`Single eye validation: ${formatZodError(singleResult.error)}`);
+      }
+    }
+    
+    // Validate diagnosis if present
+    if (response.diagnosis) {
+      const diagResult = DiagnosisSchema.safeParse(response.diagnosis);
+      if (!diagResult.success) {
+        warnings.push(`Diagnosis validation: ${formatZodError(diagResult.error)}`);
+      }
+    }
+    
+    // Critical validation: ensure we have at least basic structure
+    if (isBilateral && response.bilateral !== true) {
+      errors.push('Expected bilateral response but got single eye format');
+    }
+    
+    if (isBilateral && (!response.od && !response.oe)) {
+      errors.push('Bilateral response missing both OD and OE data');
+    }
+    
+    // Log validation results
+    if (warnings.length > 0) {
+      console.log('[analyze-image] Validation warnings:', warnings.join(' | '));
+    }
+    if (errors.length > 0) {
+      console.error('[analyze-image] Validation errors:', errors.join(' | '));
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      data: response,
+      warnings,
+      errors,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown validation error';
+    console.error('[analyze-image] Validation exception:', errorMsg);
+    return {
+      isValid: false,
+      data: response,
+      warnings,
+      errors: [errorMsg],
+    };
+  }
+}
+
+function sanitizeAndNormalizeResponse(response: any, examType: string): any {
+  // Ensure recommendations is always an array
+  if (!response.recommendations) {
+    response.recommendations = [];
+  } else if (!Array.isArray(response.recommendations)) {
+    response.recommendations = [String(response.recommendations)];
+  }
+  
+  // Ensure diagnosis structure
+  if (!response.diagnosis) {
+    response.diagnosis = { primary: '', secondary: [], differential: [] };
+  }
+  
+  // Normalize quality scores
+  const normalizeQuality = (quality: any) => {
+    if (!quality) return null;
+    const validScores = ['boa', 'moderada', 'ruim'];
+    if (quality.score && !validScores.includes(quality.score)) {
+      // Try to map common variations
+      const normalized = quality.score.toLowerCase().trim();
+      if (normalized.includes('boa') || normalized.includes('good')) {
+        quality.score = 'boa';
+      } else if (normalized.includes('ruim') || normalized.includes('poor') || normalized.includes('bad')) {
+        quality.score = 'ruim';
+      } else {
+        quality.score = 'moderada';
+      }
+    }
+    return quality;
+  };
+  
+  if (response.quality) {
+    response.quality = normalizeQuality(response.quality);
+  }
+  if (response.od?.quality) {
+    response.od.quality = normalizeQuality(response.od.quality);
+  }
+  if (response.oe?.quality) {
+    response.oe.quality = normalizeQuality(response.oe.quality);
+  }
+  
+  return response;
+}
 
 // ============= PROMPTS POR TIPO DE EXAME =============
 
@@ -1200,10 +1646,31 @@ serve(async (req) => {
       );
     }
 
+    // ============= VALIDATE AND SANITIZE AI RESPONSE =============
+    
+    // Sanitize and normalize the response first
+    parsedResponse = sanitizeAndNormalizeResponse(parsedResponse, exam.exam_type);
+    
+    // Validate response structure with Zod schemas
+    const validationResult = validateAiResponse(exam.exam_type, parsedResponse, isBilateral);
+    
+    // Log validation result
+    console.log('[analyze-image] Validation result:', {
+      isValid: validationResult.isValid,
+      warningCount: validationResult.warnings.length,
+      errorCount: validationResult.errors.length,
+    });
+    
+    // If validation has critical errors, we still proceed but log extensively
+    // This maintains backward compatibility while providing visibility into data quality
+    if (!validationResult.isValid) {
+      console.warn('[analyze-image] Proceeding with invalid response - errors:', validationResult.errors);
+    }
+
     // Map response to database schema
     const mappedData = mapResponseToAnalysis(exam.exam_type, parsedResponse, isBilateral);
 
-    // Insert analysis into database
+    // Insert analysis into database with validation metadata
     const { data: analysis, error: insertError } = await supabase
       .from('ai_analysis')
       .insert({
@@ -1217,7 +1684,15 @@ serve(async (req) => {
         diagnosis: mappedData.diagnosis,
         recommendations: mappedData.recommendations,
         risk_classification: mappedData.risk_classification,
-        raw_response: parsedResponse,
+        raw_response: {
+          ...parsedResponse,
+          _validation: {
+            isValid: validationResult.isValid,
+            warnings: validationResult.warnings,
+            errors: validationResult.errors,
+            validatedAt: new Date().toISOString(),
+          }
+        },
         model_used: 'google/gemini-2.5-pro',
       })
       .select()
@@ -1232,7 +1707,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('[analyze-image] Analysis saved:', analysis.id);
+    console.log('[analyze-image] Analysis saved:', analysis.id, 'validation:', validationResult.isValid ? 'PASSED' : 'WARNINGS');
 
     // Update exam status to analyzed
     await supabase
@@ -1242,13 +1717,17 @@ serve(async (req) => {
 
     console.log('[analyze-image] Exam status updated to analyzed');
 
-    // Return success response
+    // Return success response with validation info
     return new Response(
       JSON.stringify({
         success: true,
         analysis_id: analysis.id,
         exam_id,
         bilateral: isBilateral,
+        validation: {
+          isValid: validationResult.isValid,
+          warningCount: validationResult.warnings.length,
+        },
         message: 'Análise concluída com sucesso',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
