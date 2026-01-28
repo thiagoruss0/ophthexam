@@ -564,73 +564,71 @@ export default function ExamViewPage() {
         </div>
 
         {/* Main Content */}
-        <div className="grid gap-6 lg:grid-cols-5">
-          {/* Image Section */}
-          <div className="lg:col-span-3 space-y-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Imagem do Exame</CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setZoom((z) => Math.max(50, z - 25))}
-                    >
-                      <ZoomOut className="h-4 w-4" />
-                    </Button>
-                    <span className="text-sm w-12 text-center">{zoom}%</span>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setZoom((z) => Math.min(200, z + 25))}
-                    >
-                      <ZoomIn className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="icon">
-                      <Maximize2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+        <div className="space-y-6">
+          {/* Image Section - Full Width */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Imagem do Exame</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setZoom((z) => Math.max(50, z - 25))}
+                  >
+                    <ZoomOut className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm w-12 text-center">{zoom}%</span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setZoom((z) => Math.min(200, z + 25))}
+                  >
+                    <ZoomIn className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="icon">
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="relative overflow-auto bg-muted rounded-lg" style={{ maxHeight: "500px" }}>
-                  {exam.images[selectedImageIndex] ? (
-                    <img
-                      src={exam.images[selectedImageIndex].image_url}
-                      alt="Exam"
-                      style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top left" }}
-                      className="transition-transform"
-                    />
-                  ) : (
-                    <div className="h-64 flex items-center justify-center text-muted-foreground">
-                      Imagem não disponível
-                    </div>
-                  )}
-                </div>
-
-                {/* Thumbnails */}
-                {exam.images.length > 1 && (
-                  <div className="flex gap-2 mt-4">
-                    {exam.images.map((img, idx) => (
-                      <button
-                        key={img.id}
-                        onClick={() => setSelectedImageIndex(idx)}
-                        className={`h-16 w-16 rounded border-2 overflow-hidden ${
-                          selectedImageIndex === idx ? "border-primary" : "border-transparent"
-                        }`}
-                      >
-                        <img src={img.image_url} alt="" className="h-full w-full object-cover" />
-                      </button>
-                    ))}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="relative overflow-auto bg-muted rounded-lg" style={{ maxHeight: "400px" }}>
+                {exam.images[selectedImageIndex] ? (
+                  <img
+                    src={exam.images[selectedImageIndex].image_url}
+                    alt="Exam"
+                    style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top left" }}
+                    className="transition-transform"
+                  />
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-muted-foreground">
+                    Imagem não disponível
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </div>
 
-          {/* Analysis Section */}
-          <div className="lg:col-span-2 space-y-4">
+              {/* Thumbnails */}
+              {exam.images.length > 1 && (
+                <div className="flex gap-2 mt-4">
+                  {exam.images.map((img, idx) => (
+                    <button
+                      key={img.id}
+                      onClick={() => setSelectedImageIndex(idx)}
+                      className={`h-16 w-16 rounded border-2 overflow-hidden ${
+                        selectedImageIndex === idx ? "border-primary" : "border-transparent"
+                      }`}
+                    >
+                      <img src={img.image_url} alt="" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Analysis Section - Full Width Below Image */}
+          <div className="space-y-4">
             {/* Analysis Status Cards */}
             {exam.status === "analyzing" && (
               <Card className={elapsedSeconds >= 60 ? "bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" : "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"}>
