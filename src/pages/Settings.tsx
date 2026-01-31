@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -42,6 +42,25 @@ export default function SettingsPage() {
 
   // Preferences
   const [emailNotifications, setEmailNotifications] = useState(profile?.email_notifications ?? true);
+
+  // Sync local state when profile changes (BUG-001 fix)
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name || "");
+      setPhone(profile.phone || "");
+      setClinicName(profile.clinic_name || "");
+      setClinicAddress(profile.clinic_address || "");
+      setClinicPhone(profile.clinic_phone || "");
+      setClinicCnpj(profile.clinic_cnpj || "");
+      setIncludeLogo(profile.include_logo_in_pdf ?? true);
+      setIncludeSignature(profile.include_signature_in_pdf ?? true);
+      setDefaultTemplate(profile.default_report_template || "");
+      setAvatarUrl(profile.avatar_url || "");
+      setClinicLogoUrl(profile.clinic_logo_url || "");
+      setSignatureUrl(profile.signature_url || "");
+      setEmailNotifications(profile.email_notifications ?? true);
+    }
+  }, [profile]);
 
   const handleSaveProfile = async () => {
     if (!profile?.id) return;
