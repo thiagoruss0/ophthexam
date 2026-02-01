@@ -1,98 +1,113 @@
 
+# Plano de Correção: BUG-002 - Busca Server-Side no Histórico
 
-## Plano: Ajustar Imagem para Caber na Viewport
+## Problema Identificado
 
-### Problema Identificado
-Atualmente a imagem do exame está com:
-- `maxHeight: 400px` fixo no container
-- `overflow: auto` que força rolagem
-- Zoom aplicado com `transformOrigin: "top left"` que expande a imagem para fora do container
-
-Isso resulta em uma imagem que precisa de scroll para ser visualizada por inteiro, especialmente em imagens de relatórios bilaterais que são mais altas.
-
-### Solução Proposta
-Alterar o comportamento da imagem para que ela:
-1. **Caiba completamente na janela** sem necessidade de rolagem
-2. **Mantenha a definição** usando `object-fit: contain`
-3. **Preserve a funcionalidade de zoom** permitindo aumentar quando necessário
-
----
-
-### Alterações Técnicas
-
-#### Arquivo: `src/pages/ExamView.tsx`
-
-**Modificação no Container da Imagem (linha ~596-609)**
-
-De:
-```tsx
-<div className="relative overflow-auto bg-muted rounded-lg" style={{ maxHeight: "400px" }}>
-  {exam.images[selectedImageIndex] ? (
-    <img
-      src={exam.images[selectedImageIndex].image_url}
-      alt="Exam"
-      style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top left" }}
-      className="transition-transform"
-    />
-  ) : (
-    ...
-  )}
-</div>
-```
-
-Para:
-```tsx
-<div 
-  className="relative bg-muted rounded-lg flex items-center justify-center"
-  style={{ 
-    height: "calc(60vh - 100px)",  // Altura baseada na viewport
-    minHeight: "300px",
-    maxHeight: "500px",
-    overflow: zoom > 100 ? "auto" : "hidden"  // Scroll apenas quando zoom > 100%
-  }}
->
-  {exam.images[selectedImageIndex] ? (
-    <img
-      src={exam.images[selectedImageIndex].image_url}
-      alt="Exam"
-      style={{ 
-        maxWidth: zoom === 100 ? "100%" : `${zoom}%`,
-        maxHeight: zoom === 100 ? "100%" : `${zoom}%`,
-        objectFit: "contain",  // Mantém proporção e definição
-        transition: "all 0.2s ease"
-      }}
-      className="rounded"
-    />
-  ) : (
-    ...
-  )}
-</div>
-```
-
----
-
-### Comportamento Esperado
-
-1. **Zoom 100% (padrão)**: A imagem se ajusta automaticamente ao container, exibindo-se por inteiro sem rolagem
-2. **Zoom > 100%**: A imagem aumenta e aparece scrollbar para navegar
-3. **Zoom < 100%**: A imagem diminui proporcionalmente
+A busca por nome de paciente está sendo feita **client-side** após a paginação server-side, causando falhas quando o paciente buscado não está na página atual.
 
 ```text
-+------------------------------------------+
-|           Imagem do Exame                |
-|  [zoom controls]           [-] 100% [+]  |
-| +--------------------------------------+ |
-| |                                      | |
-| |   [Imagem ajustada ao container]     | |
-| |   (sem necessidade de scroll)        | |
-| |                                      | |
-| +--------------------------------------+ |
-+------------------------------------------+
++-------------------+     +------------------+     +----------------+
+|  Servidor         |     |  Cliente         |     |  Problema      |
++-------------------+     +------------------+     +----------------+
+| Retorna página 3  | --> | Filtra por nome  | --> | Paciente na    |
+| (20 registros)    |     | nos 20 registros |     | página 1 não   |
+|                   |     |                  |     | é encontrado   |
++-------------------+     +------------------+     +----------------+
 ```
 
-### Vantagens
-- Imagem visível por inteiro ao carregar a página
-- Mantém definição usando `object-fit: contain`
-- Altura responsiva baseada na viewport (`60vh`)
-- Funcionalidade de zoom preservada para análise detalhada
+## Solução Proposta
 
+Implementar busca em duas etapas:
+1. Quando houver termo de busca, primeiro consultar a tabela `patients` para obter IDs correspondentes
+2. Usar esses IDs para filtrar a consulta de `exams` no servidor
+
+```text
++-------------------+     +------------------+     +----------------+
+|  Busca Pacientes  |     |  Filtra Exames   |     |  Resultado     |
++-------------------+     +------------------+     +----------------+
+| SELECT id FROM    | --> | .in('patient_id',| --> | Paginação      |
+| patients WHERE    |     |   patientIds)    |     | correta com    |
+| name ILIKE '%X%'  |     |                  |     | busca aplicada |
++-------------------+     +------------------+     +----------------+
+```
+
+## Implementação
+
+### Arquivo: `src/pages/History.tsx`
+
+#### 1. Adicionar debounce na busca
+Para evitar requisições excessivas durante a digitação:
+- Criar estado `debouncedSearch` 
+- Implementar `useEffect` com `setTimeout` de 300ms
+- Usar `debouncedSearch` nas queries ao invés de `search`
+
+#### 2. Resetar página ao buscar
+Quando o termo de busca mudar:
+- Resetar `page` para 1
+- Evitar que o usuário fique em uma página vazia
+
+#### 3. Modificar `fetchExams()` para busca server-side
+Nova lógica:
+```
+SE debouncedSearch não está vazio:
+  1. Consultar tabela 'patients' com ILIKE no nome
+  2. Extrair lista de patient_ids
+  3. SE nenhum paciente encontrado: retornar lista vazia
+  4. Adicionar filtro .in('patient_id', patientIds) na query de exams
+  
+Continuar com query normal de exams (tipo, status, datas, paginação)
+```
+
+#### 4. Aplicar mesma lógica em `handleExportCsv()`
+Garantir que exportação CSV também use busca server-side para consistência.
+
+#### 5. Remover filtro client-side
+Eliminar o código que fazia `filteredData.filter()` após receber dados do servidor.
+
+## Detalhes Técnicos
+
+### Query de pacientes (nova)
+```typescript
+const { data: matchingPatients } = await supabase
+  .from("patients")
+  .select("id")
+  .eq("created_by", profile.id)
+  .ilike("name", `%${debouncedSearch}%`);
+```
+
+### Filtro na query de exams (modificação)
+```typescript
+if (patientIds && patientIds.length > 0) {
+  query = query.in("patient_id", patientIds);
+}
+```
+
+### Debounce implementation
+```typescript
+const [debouncedSearch, setDebouncedSearch] = useState("");
+
+useEffect(() => {
+  const timer = setTimeout(() => {
+    setDebouncedSearch(search);
+  }, 300);
+  return () => clearTimeout(timer);
+}, [search]);
+```
+
+## Benefícios
+
+| Aspecto | Antes | Depois |
+|---------|-------|--------|
+| Busca | Client-side (20 registros) | Server-side (todos) |
+| Paginação | Incorreta com busca | Correta com busca |
+| Performance | UX ruim em grandes volumes | Escalável |
+| Consistência | Busca e export diferentes | Mesma lógica |
+
+## Testes Recomendados
+
+1. Cadastrar 50+ exames com pacientes diferentes
+2. Navegar até página 3
+3. Buscar por paciente que está na página 1
+4. Verificar que o paciente é encontrado
+5. Testar exportação CSV com busca ativa
+6. Verificar debounce (não deve fazer request a cada tecla)
