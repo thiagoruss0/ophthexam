@@ -104,6 +104,13 @@ export default function NewAnalysisPage() {
     return () => clearTimeout(debounce);
   }, [patientSearch, profile?.id]);
 
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      previews.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     const validFiles = files.filter((file) => {
@@ -122,17 +129,14 @@ export default function NewAnalysisPage() {
 
     setUploadedFiles((prev) => [...prev, ...validFiles]);
 
-    // Generate previews
-    validFiles.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPreviews((prev) => [...prev, e.target?.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    // Generate previews using URL.createObjectURL (more memory efficient)
+    const newPreviews = validFiles.map((file) => URL.createObjectURL(file));
+    setPreviews((prev) => [...prev, ...newPreviews]);
   };
 
   const removeFile = (index: number) => {
+    // Revoke the URL before removing to prevent memory leak
+    URL.revokeObjectURL(previews[index]);
     setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
     setPreviews((prev) => prev.filter((_, i) => i !== index));
   };
