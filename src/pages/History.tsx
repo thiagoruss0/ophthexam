@@ -61,6 +61,7 @@ export default function HistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -70,15 +71,51 @@ export default function HistoryPage() {
   const [deletingExamId, setDeletingExamId] = useState<string | null>(null);
   const perPage = 20;
 
+  // Debounce search to avoid excessive requests
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset page when search changes
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
   useEffect(() => {
     if (profile?.id) {
       fetchExams();
     }
-  }, [profile?.id, search, typeFilter, statusFilter, dateFrom, dateTo, page]);
+  }, [profile?.id, debouncedSearch, typeFilter, statusFilter, dateFrom, dateTo, page]);
 
   const fetchExams = async () => {
     setIsLoading(true);
     try {
+      // Server-side search: first get matching patient IDs
+      let patientIds: string[] | null = null;
+      
+      if (debouncedSearch) {
+        const { data: matchingPatients, error: patientsError } = await supabase
+          .from("patients")
+          .select("id")
+          .eq("created_by", profile?.id)
+          .ilike("name", `%${debouncedSearch}%`);
+        
+        if (patientsError) throw patientsError;
+        
+        // If search term provided but no patients found, return empty
+        if (!matchingPatients || matchingPatients.length === 0) {
+          setExams([]);
+          setTotalPages(1);
+          setIsLoading(false);
+          return;
+        }
+        
+        patientIds = matchingPatients.map(p => p.id);
+      }
+
       let query = supabase
         .from("exams")
         .select(`
@@ -92,6 +129,11 @@ export default function HistoryPage() {
         .eq("doctor_id", profile?.id)
         .order("exam_date", { ascending: false })
         .range((page - 1) * perPage, page * perPage - 1);
+
+      // Apply patient filter from search
+      if (patientIds && patientIds.length > 0) {
+        query = query.in("patient_id", patientIds);
+      }
 
       if (typeFilter && (typeFilter === "oct_macular" || typeFilter === "oct_nerve" || typeFilter === "retinography")) {
         query = query.eq("exam_type", typeFilter);
@@ -113,17 +155,8 @@ export default function HistoryPage() {
 
       if (error) throw error;
 
-      let filteredData = data || [];
-
-      // Client-side search for patient name
-      if (search) {
-        filteredData = filteredData.filter((exam) =>
-          (exam.patients as any)?.name?.toLowerCase().includes(search.toLowerCase())
-        );
-      }
-
       setExams(
-        filteredData.map((exam) => ({
+        (data || []).map((exam) => ({
           id: exam.id,
           exam_type: exam.exam_type,
           eye: exam.eye,
@@ -147,6 +180,28 @@ export default function HistoryPage() {
     
     setIsExporting(true);
     try {
+      // Server-side search: first get matching patient IDs
+      let patientIds: string[] | null = null;
+      
+      if (debouncedSearch) {
+        const { data: matchingPatients, error: patientsError } = await supabase
+          .from("patients")
+          .select("id")
+          .eq("created_by", profile.id)
+          .ilike("name", `%${debouncedSearch}%`);
+        
+        if (patientsError) throw patientsError;
+        
+        // If search term provided but no patients found, export empty
+        if (!matchingPatients || matchingPatients.length === 0) {
+          toast({ title: "Nenhum exame encontrado para exportar" });
+          setIsExporting(false);
+          return;
+        }
+        
+        patientIds = matchingPatients.map(p => p.id);
+      }
+
       // Fetch ALL exams without pagination, applying the same filters
       let query = supabase
         .from("exams")
@@ -160,6 +215,11 @@ export default function HistoryPage() {
         `)
         .eq("doctor_id", profile.id)
         .order("exam_date", { ascending: false });
+
+      // Apply patient filter from search
+      if (patientIds && patientIds.length > 0) {
+        query = query.in("patient_id", patientIds);
+      }
 
       if (typeFilter && (typeFilter === "oct_macular" || typeFilter === "oct_nerve" || typeFilter === "retinography")) {
         query = query.eq("exam_type", typeFilter);
@@ -181,14 +241,7 @@ export default function HistoryPage() {
 
       if (error) throw error;
 
-      let filteredData = data || [];
-
-      // Apply client-side search filter
-      if (search) {
-        filteredData = filteredData.filter((exam) =>
-          (exam.patients as any)?.name?.toLowerCase().includes(search.toLowerCase())
-        );
-      }
+      const filteredData = data || [];
 
       // Build CSV content
       const header = ["Paciente", "Tipo de Exame", "Olho", "Data", "Status"];
